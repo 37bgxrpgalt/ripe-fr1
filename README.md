@@ -5,21 +5,30 @@ A local-only food freshness monitor: an ESP32 reads an **MQ-3** gas sensor
 (Dieter Rams)** dashboard from its own web server. No cloud, no internet — just
 open the IP on your phone.
 
+![The Ripe FR-1 dashboard — Advanced view](docs/dashboard-screenshot.png)
+
+> **Live preview:** <https://37bgxrpgalt.github.io/ripe-fr1/> — enable Pages once
+> (§10), then open it with **Preview demo data** on. A hosted HTTPS page can't
+> reach a local ESP32.
+
 ```
-SMART FOOD Project/
+ripe-fr1/
 ├── README.md                          ← you are here
 ├── STATE.md                           ← working log: what changed, what's next
 ├── design.md                          ← locked style guide (Braun-inspired, one accent, dark+light tokens)
+├── FIREBASE_SETUP.md                  ← optional cloud sync (Google sign-in + Firestore)
 ├── esp32/
 │   └── food_spoilage_monitor/
 │       ├── food_spoilage_monitor.ino  ← main firmware (Wi-Fi + AP + BLE + CORS)
-│       ├── config.h                   ← edit Wi-Fi credentials & pins here
+│       ├── config.h                   ← Wi-Fi credentials & pins — LOCAL ONLY, git-ignored
+│       ├── config.example.h           ← masked template (copy to config.h and fill in)
 │       └── web_page.h                 ← AUTO-GENERATED embedded dashboard
 ├── web/
 │   ├── index.html                     ← source of truth for the UI (has Settings + dark mode)
+│   ├── favicon.svg                    ← tab icon (also embedded in the firmware)
 │   ├── mock_server.ps1                ← local server: mock sensor + ESP32 bridge (Windows)
 │   ├── mock_server.py                 ← same thing (macOS/Linux)
-│   └── settings.json                  ← last-saved ESP32 address (runtime-created; delete to forget)
+│   └── settings.json                  ← last-saved ESP32 address — LOCAL ONLY, git-ignored
 └── tools/
     ├── embed_page.ps1                 ← regenerates web_page.h (Windows)
     └── embed_page.py                  ← same thing (macOS/Linux)
@@ -228,38 +237,30 @@ scripts warn you if the file contains the string terminator.)
 
 ## 10. Hosting the dashboard (GitHub Pages)
 
-The dashboard is plain static files, so it can be published as-is. Only `web/` is
-served — the firmware, tools and docs stay in the repo but are not published.
+The dashboard is plain static files, so it can also be published as a website.
+Only `web/` is served — the firmware, tools and docs stay in the repo but are not
+published.
 
-### One-time setup
-1. Install **Git for Windows** (<https://git-scm.com/download/win>) — there is no
-   `git` on this PC yet. (GitHub Desktop works too.)
-2. Create an empty **public** repo on GitHub. The free Pages tier needs a public
-   repo; don't add a README there.
-3. In `D:\Webserver`:
-   ```bash
-   git init -b main
-   git add .
-   git commit -m "Ripe FR-1: dashboard, firmware and docs"
-   git remote add origin https://github.com/<you>/<repo>.git
-   git push -u origin main
-   ```
-4. Repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-   The committed `.github/workflows/pages.yml` publishes `web/` on every push.
+**Live:** <https://37bgxrpgalt.github.io/ripe-fr1/>
 
-The URL is `https://<you>.github.io/<repo>/`.
+### Enabling it
+1. Use a **public** repo (the free Pages tier requires it).
+2. Repo → **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. `.github/workflows/pages.yml` then publishes `web/` on every push to `main`;
+   the URL is `https://<you>.github.io/<repo>/`.
 
 ### What works, and what doesn't
 - **Everything runs** — the page is client-side JS; Pages just serves the files.
-- **"Preview demo data"** works with no backend at all.
+- **"Preview demo data"** works with no backend at all, and the Google Fonts load
+  normally (a hosted page has internet).
 - **It cannot reach the ESP32.** A page served over HTTPS is blocked by the
-  browser from calling `http://192.168.1.57/data` ("mixed content"), and the
-  ESP32 has no TLS. So the hosted page follows the **cloud** (Firebase) instead;
+  browser from calling `http://192.168.1.57/data` ("mixed content"), and the ESP32
+  has no TLS. The hosted page therefore follows the **cloud** (Firebase) instead;
   publishing is done by the Android app or the local `http://localhost:8012`
   page. See `FIREBASE_SETUP.md`.
 - The ESP32's own page and the local server page are unaffected.
 
 ### Secrets
 `esp32/food_spoilage_monitor/config.h` (Wi-Fi SSID/password) is **git-ignored**;
-a masked `config.example.h` is committed instead. Copy it to `config.h` and fill
-in your own values.
+the committed `config.example.h` is a masked template — copy it to `config.h` and
+fill in your own values.
