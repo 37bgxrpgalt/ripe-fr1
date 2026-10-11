@@ -7,7 +7,7 @@ this PC the root is `D:\Webserver\` (it was moved here from the flaky `E:\`
 removable drive — see caveats). So `E:\ (or D:\)Webserver\...` means
 `E:\Webserver\...` or `D:\Webserver\...` on the relevant machine.
 
-Last updated: 2026-10-11: GitHub Pages hosting prep (repo-ready: `.gitignore`, `.github/workflows/pages.yml`, `config.example.h`, relative favicon) — plus the favicon + Basic/Advanced mode from earlier today
+Last updated: 2026-10-11: pushed to GitHub (`37bgxrpgalt/ripe-fr1`); README refreshed (live screenshot + tree); GitHub Pages prep (`config.example.h`, workflow, relative favicon)
 
 ---
 
@@ -487,9 +487,20 @@ publishing is done by the **Android app** or the local `http://localhost:8012`
 page. Vercel / Netlify / Cloudflare do **not** change this (their functions run
 in the cloud, off your LAN). The ESP32's own page is unaffected.
 
-Not completed here: **`git` is not installed on this PC**, so the repo was not
-initialised or committed. Install Git for Windows (or use GitHub Desktop), then
-follow README §10 (`git init -b main` → `add` → `commit` → `push`).
+**Follow-up (2026-10-11):** the README was then refreshed — a **new live
+screenshot** (captured 1281×1148 in light mode via the browser tool and written to
+`docs/dashboard-screenshot.png`, replacing the Oct-9 one), an embedded preview and
+**Live** URL at the top, an accurate file tree (git-ignored `config.h` /
+`settings.json` marked *LOCAL ONLY*, plus `config.example.h`, `favicon.svg` and
+`FIREBASE_SETUP.md` added), and §10 rewritten to be reader-facing and current (no
+more "install Git on this PC", real repo URL).
+
+**Pushed to GitHub** (2026-10-11): <https://github.com/37bgxrpgalt/ripe-fr1>
+(public). `git` was installed and the `dubious ownership` warning cleared with
+`git config --global --add safe.directory D:/Webserver`; local `main` ==
+`origin/main` at `8333251`. **Not done: enabling Pages** — repo → Settings → Pages
+→ Build and deployment → Source: **GitHub Actions**, after which the committed
+workflow serves `web/` at <https://37bgxrpgalt.github.io/ripe-fr1/>.
 
 ## Resume here (next session)
 1. Everything on the software side of this round is **done and verified** on the
@@ -512,10 +523,11 @@ follow README §10 (`git init -b main` → `add` → `commit` → `push`).
    Save & connect). At handoff no server is left running; if the screenshot-demo
    server is still up at `http://localhost:8010`, kill the `mock_server.ps1`
    process when done.
-5. Still not committed — the folder is **not yet a git repo**, and `git` is not
-   installed on this PC. Repo-ready files exist (`.gitignore`,
-   `.github/workflows/pages.yml`, `config.example.h`); install Git for Windows
-   and follow README §10 to publish to GitHub Pages, then start the Firebase work.
+5. **Pushed to GitHub** — <https://github.com/37bgxrpgalt/ripe-fr1> (public;
+   `main` == `origin/main` at `8333251`). Next: enable **GitHub Pages** (Settings
+   → Pages → Source: **GitHub Actions**); the committed workflow then serves
+   `web/` at <https://37bgxrpgalt.github.io/ripe-fr1/>. After that, start the
+   **Firebase** work — web first, needs the `firebaseConfig` object.
 6. Keep the locked design language (`design.md`): warm hue ~40, one accent
    `#edb100`, no gradients/cool grays/emoji. Re-run `tools\embed_page.ps1` after
    any future `web/index.html` edit.
