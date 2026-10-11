@@ -286,7 +286,8 @@ on the same account (`FIREBASE_SETUP.md`).
 
 ### Download & install
 1. Open the repo's **Releases** page (right-hand sidebar: *Releases*).
-2. Download the latest **APK** asset (for v1.0.0: **`RipeFR1-v1.0.0.apk`**).
+2. Download the **APK** asset — for v1.0.0a: **`Ripe_FR-1-v.1.0.0-alpha.apk`**
+   ([release page](https://github.com/37bgxrpgalt/ripe-fr1/releases/tag/v1.0.0a)).
 3. On the phone, allow *Install unknown apps* for your browser / Files app, then
    tap the APK. Debug builds are self-signed, so an "unknown developer" warning is
    normal.
