@@ -5,10 +5,13 @@ web dashboard *and* the Android app — whichever device is actually talking to 
 ESP32.
 
 **Household model (chosen):** everyone in the house signs in with the **same
-Google account**, so they all get the same `uid` and therefore the same data. One
+account**, so they all get the same `uid` and therefore the same data. One
 device — the one on the ESP32's Wi‑Fi — runs **Publish this device**; everyone
-else runs **Follow the cloud**. Real per-person isolation is still available
-later with zero code changes, because the rules already key off `uid`.
+else runs **Follow the cloud**. For testing we use **email + password** (a shared
+`home@…` account) because it works identically on the web and the Android app
+with no SHA‑1 setup; the web can also sign in with Google. Real per-person
+isolation is still available later with zero code changes, because the rules
+already key off `uid`.
 
 Everything in **Part A** is console work you do once (it needs your Google account
 and creates resources in your project). When it's done, send me the two items
@@ -43,10 +46,16 @@ marked **→ SEND ME** and I'll wire the code.
    .\gradlew signinReport
    ```
 
-### 4 · Enable Google sign-in
+### 4 · Enable sign-in
 1. **Build → Authentication → Get started**.
-2. **Sign-in method → Google → Enable**. Pick a support email → **Save**.
-3. **Authentication → Settings → Authorized domains**: `localhost` is there by
+2. **Sign-in method → Email/Password → Enable** (turn on *Email/Password*, leave
+   *Email link* off) → **Save**. **This is the one the Android app uses** — it
+   needs no SHA‑1 or Play‑Services setup, and the web has the same email +
+   password form, so a phone and a browser sign in to the *same* account.
+3. **Sign-in method → Google → Enable** (optional). Pick a support email →
+   **Save**. The web can also use Google, but then the phone must use Google too
+   to share a uid.
+4. **Authentication → Settings → Authorized domains**: `localhost` is there by
    default. **Add `37bgxrpgalt.github.io`** — that's the GitHub Pages host of the
    cloud dashboard (see step 7). Without this, the Google pop‑up fails with
    `auth/unauthorized-domain`.

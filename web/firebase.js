@@ -18,7 +18,8 @@ import { initializeApp }
   from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup,
-  signInWithRedirect, getRedirectResult, signOut
+  signInWithRedirect, getRedirectResult, signOut,
+  signInWithEmailAndPassword, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query,
@@ -49,6 +50,15 @@ export function signIn() {
 }
 
 export function signOutNow() { return signOut(auth); }
+
+/* Email + password — the simple path that also works on the Android app, so a
+   phone and a browser can sign in with the same account and share everything. */
+export function signInEmail(email, pass) {
+  return signInWithEmailAndPassword(auth, email, pass);
+}
+export function createEmail(email, pass) {
+  return createUserWithEmailAndPassword(auth, email, pass);
+}
 
 /* ------------------------------------------------------------------ data -- */
 

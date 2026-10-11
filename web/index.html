@@ -255,13 +255,14 @@ canvas#spark{display:block;width:100%;height:150px}
 /* ---------- calibration --------------------------------------------------- */
 .rule{margin:0 0 16px;font-size:12.5px;color:var(--muted);font-family:var(--font-disp)}
 .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:12px}
+.fields[hidden]{display:none}
 .field label{display:block;margin-bottom:6px;font-family:var(--font-disp);font-weight:500;
   font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
-input[type=number],input[type=text]{
+input[type=number],input[type=text],input[type=email],input[type=password]{
   width:100%;background:var(--panel-hi);border:1px solid var(--hair);border-radius:10px;
   padding:10px 12px;font:500 15px var(--font-disp);font-variant-numeric:tabular-nums;color:var(--ink);
 }
-input[type=number]:focus,input[type=text]:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+input[type=number]:focus,input[type=text]:focus,input[type=email]:focus,input[type=password]:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
 .hint{margin:16px 0 0;font-size:12.5px;line-height:1.5;color:var(--muted)}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:16px}
 
@@ -542,9 +543,17 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
 
       <div class="grp" id="acctGrp">
         <h3>Account</h3>
-        <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in with the household Google account to share readings.</p>
-        <div class="actions" style="margin-top:0">
-          <button class="btn-quiet" id="signInBtn" type="button">Sign in with Google</button>
+        <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in to share readings and settings across your devices.</p>
+        <div class="fields" id="acctFields">
+          <div class="field"><label for="acctEmail">Email</label>
+            <input type="email" id="acctEmail" placeholder="you@example.com" autocomplete="email" spellcheck="false"></div>
+          <div class="field"><label for="acctPass">Password</label>
+            <input type="password" id="acctPass" placeholder="at least 6 characters" autocomplete="current-password"></div>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn-primary" id="acctSignIn" type="button">Sign in</button>
+          <button class="btn-quiet" id="acctCreate" type="button">Create account</button>
+          <button class="btn-quiet" id="signInBtn" type="button">Use Google instead</button>
           <button class="btn-quiet" id="signOutBtn" type="button" hidden>Sign out</button>
           <span class="msg" id="acctMsg" aria-live="polite"></span>
         </div>
@@ -1099,7 +1108,7 @@ function setAcct(t,bad){var m=$('acctMsg');if(!m){return;}m.textContent=t||'';m.
 var cloudPromise=null;
 function loadCloud(){
   if(cloudPromise){return cloudPromise;}
-  cloudPromise=import('./firebase.js?v=2').then(function(mod){
+  cloudPromise=import('./firebase.js?v=3').then(function(mod){
     state.cloud.mod=mod;
     mod.onUser(function(u){onCloudUser(u);});
     return mod;
@@ -1118,14 +1127,40 @@ function onCloudUser(u){
   startPrefsSync();     /* settings follow the account, whatever the sync mode */
   applyCloud();
 }
+function acctError(e){
+  var code=(e&&e.code)?e.code:'';
+  switch(code){
+    case 'auth/invalid-email':return 'That email address looks wrong.';
+    case 'auth/missing-password':return 'Enter the password.';
+    case 'auth/user-not-found':return 'No account with that email — press “Create account” first.';
+    case 'auth/wrong-password':return 'Wrong password.';
+    case 'auth/invalid-credential':return 'Email or password is incorrect.';
+    case 'auth/email-already-in-use':return 'That email already has an account — press “Sign in”.';
+    case 'auth/weak-password':return 'Use a password with at least 6 characters.';
+    case 'auth/operation-not-allowed':return 'Enable Email/Password (or Google) in Firebase Authentication.';
+    case 'auth/too-many-requests':return 'Too many attempts — wait a minute and try again.';
+    case 'auth/network-request-failed':return 'Network error — check your connection.';
+    case 'auth/popup-closed-by-user':case 'auth/cancelled-popup-request':return 'Google sign-in cancelled.';
+    case 'auth/unauthorized-domain':return 'This domain is not authorised in Firebase Authentication.';
+    default:return (e&&e.message)?e.message:'Sign-in failed.';
+  }
+}
+function acctCreds(){
+  return {e:($('acctEmail').value||'').trim(),p:($('acctPass').value||'')};
+}
 function updateAccountUI(){
   var out=$('acctOut');if(!out){return;}
   var u=state.cloud.user;
+  var f=$('acctFields');
   if(u){
-    out.textContent='Signed in as '+(u.email||u.displayName||u.uid)+' — every device on this account shares one set of readings.';
+    out.textContent='Signed in as '+(u.email||u.displayName||u.uid)+' — readings and settings are shared with every device on this account.';
+    if(f){f.hidden=true;}
+    $('acctSignIn').hidden=true;$('acctCreate').hidden=true;
     $('signInBtn').hidden=true;$('signOutBtn').hidden=false;
   }else{
-    out.textContent='Not signed in — sign in with the household Google account to share readings.';
+    out.textContent='Not signed in — sign in to share readings and settings across your devices.';
+    if(f){f.hidden=false;}
+    $('acctSignIn').hidden=false;$('acctCreate').hidden=false;
     $('signInBtn').hidden=false;$('signOutBtn').hidden=true;
   }
 }
@@ -1458,17 +1493,28 @@ function persistServerSettings(){
     if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();pushPrefsNow();}
   });
 });
+$('acctSignIn').addEventListener('click',function(){
+  var c=acctCreds();
+  if(!c.e||!c.p){setAcct('Enter your email and password.',true);return;}
+  setAcct('Signing in…',false);
+  loadCloud().then(function(m){return m.signInEmail(c.e,c.p);})
+    .then(function(){setAcct('Signed in.',false);})
+    .catch(function(e){setAcct(acctError(e),true);});
+});
+$('acctCreate').addEventListener('click',function(){
+  var c=acctCreds();
+  if(!c.e||!c.p){setAcct('Enter an email and a password of 6+ characters.',true);return;}
+  setAcct('Creating account…',false);
+  loadCloud().then(function(m){return m.createEmail(c.e,c.p);})
+    .then(function(){setAcct('Account created — you are signed in.',false);})
+    .catch(function(e){setAcct(acctError(e),true);});
+});
+$('acctPass').addEventListener('keydown',function(ev){if(ev.key==='Enter'){$('acctSignIn').click();}});
 $('signInBtn').addEventListener('click',function(){
   setAcct('Opening Google sign-in…',false);
   loadCloud().then(function(mod){return mod.signIn();})
     .then(function(){setAcct('Signed in.',false);})
-    .catch(function(e){
-      var code=(e&&e.code)?e.code:'';
-      if(code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request'){setAcct('Sign-in cancelled.',false);}
-      else if(code==='auth/unauthorized-domain'){setAcct('This domain is not authorised in Firebase Authentication.',true);}
-      else if(code==='auth/operation-not-allowed'){setAcct('Enable the Google provider in Firebase Authentication.',true);}
-      else{setAcct((e&&e.message)?e.message:'Sign-in failed.',true);}
-    });
+    .catch(function(e){setAcct(acctError(e),true);});
 });
 $('signOutBtn').addEventListener('click',function(){
   if(state.cloud.mod){state.cloud.mod.signOutNow().catch(function(){});}
