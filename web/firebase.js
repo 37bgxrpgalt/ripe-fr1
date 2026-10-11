@@ -105,3 +105,29 @@ export function recentReadings(uid, n) {
     return rows;
   });
 }
+
+/* ------------------------------------------------------------ settings -- */
+/* Look-and-feel settings that follow the account across every signed-in
+   device (theme, typeface, Basic/Advanced, poll interval). Per-device things
+   like the data source and the ESP32 address deliberately stay local. */
+
+function docPrefs(uid) {
+  return doc(db, 'users', uid, 'prefs', 'main');
+}
+
+/* cb(null) the first time — nothing has been stored for this account yet */
+export function watchPrefs(uid, cb, onErr) {
+  return onSnapshot(docPrefs(uid), function (snap) {
+    cb(snap.exists() ? snap.data() : null);
+  }, function (err) { if (onErr) onErr(err); });
+}
+
+export function pushPrefs(uid, p) {
+  return setDoc(docPrefs(uid), {
+    theme: p.theme,
+    font: p.font,
+    mode: p.mode,
+    pollMs: p.pollMs,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}

@@ -96,6 +96,7 @@ but GitHub Pages is free, already live, and enough. Just make sure
 users/{uid}/
   state/latest        → the newest snapshot (single doc, real-time)
   readings/{autoId}   → history (one doc per status change)
+  prefs/main          → look & feel settings shared by every signed-in device
 ```
 
 `state/latest` fields mirror `/data` exactly —
@@ -118,25 +119,31 @@ updatedAt` — so the **same** dashboard renders reads with no special-casing.
 > to push to the cloud itself — a later firmware option.
 
 ### Web (`web/index.html`) additions
-- Loads the Firebase **compat/auth/firestore** SDKs from the CDN (only when a
-  config file is present, so the ESP32's offline page is unaffected).
-- **Settings → Account**: *Sign in with Google* button; avatar + email when
-  signed in; *Sign out*.
-- **Settings → Sync** (seg, mirrors the other segments):
+- Loads the Firebase **modular SDK v13.0.0** (`firebase-app` / `-auth` /
+  `-firestore`) from the CDN **on demand** — only when cloud features are used —
+  so the ESP32's offline page is unaffected.
+- **Settings → Account**: *Sign in with Google* button; email when signed in;
+  *Sign out*.
+- **Settings → Cloud sync** (seg, mirrors the other segments):
   - **Off** — today's behaviour (local only).
   - **Publish this device** — keep reading the ESP32 / BLE / mock locally and
     push each snapshot to `users/{uid}/state/latest`, plus a `readings` doc per
     status change. Use this on the device that can reach the sensor.
   - **Follow the cloud** — ignore the local source and render `state/latest` in
     real time; the history panel reads recent `readings`.
+- **Settings follow the account** — `users/{uid}/prefs/main` holds `theme`,
+  `font`, `mode` and `pollMs`; every signed-in device reads it live and writes it
+  on change, so the phone and the browser stay identical. The data source and
+  ESP32 address stay per-device.
 - The header connection chip shows the account + sync state.
 
 ### Android (after the web side is verified)
 - Firebase Auth (`Google` sign-in) + Firestore via the BOM; `google-services.json`
   + the `com.google.gms.google-services` Gradle plugin.
-- Same **Account** + **Sync** settings, same data model — so a phone can publish
-  to the ESP32 over Wi-Fi/BLE and the web (or another phone) follows, and vice
-  versa.
+- Same **Account** + **Cloud sync** settings, the same `state/latest` +
+  `readings` + `prefs/main` documents — so a phone can publish to the ESP32 over
+  Wi-Fi/BLE and the web (or another phone) follows, and the theme/font/mode match
+  on every device.
 
 ### Why the ESP32 doesn't talk to Firebase directly
 The board has no Firebase credentials and is usually on its own AP with no

@@ -340,6 +340,24 @@ Wi‑Fi runs **Publish this device**; everyone else runs **Follow the cloud**.
   `Cloud · following · not signed in`; back to **Off** hides it.
 - `web_page.h` regenerated (65 KB; payload **byte-identical** to `index.html`).
 
+### Settings sync (added same day)
+- Firestore `users/{uid}/prefs/main` holds `theme`, `font`, `mode`, `pollMs`.
+- Any signed-in device **reads it live** (`watchPrefs` → `onSnapshot`) and
+  **writes it** on change (`pushPrefs`): the theme/font/mode buttons push
+  immediately, and *Save & connect* pushes the whole set. The first sign-in
+  against an empty account **seeds** the doc from that device's settings.
+- Deliberately **not** shared: data source, transport, ESP32 host/port, and the
+  publish/follow mode — those are per-device.
+- The module is also loaded on start when `localStorage['ripe.cloud']==='1'`
+  (set on sign-in), so a reload restores the settings subscription while the
+  ESP32 page still never fetches the SDK.
+- Verified locally: `applyRemotePrefs({theme:'dark',font:'editorial',mode:'basic',pollMs:5000})`
+  updates `state.prefs`, persists to `localStorage`, flips `data-theme/-font/-mode`
+  and the footer cadence; junk (`neon`/`comic`/`expert`/`7`) is sanitised back to
+  valid values; a signed-out module load leaves `cloudReady()` false with
+  **0 console errors**.
+- Not yet verified: the real two-device round-trip (needs the Google account).
+
 ### Still unverified (needs a real Google account)
 - The Google sign-in popup itself, a real publish → follow round-trip, and the
   Firestore security rules — test on the live Pages URL.

@@ -637,7 +637,7 @@ var state={
   pending:0, fails:0, demo:false, demoTick:0, last:null,
   calDirty:false, cfgFromDevice:null,
   ble:null, bleCmd:'', bleBuf:'', bleOK:false, bleFail:false, bleHeart:0, bleName:'', bleSeen:0,
-  cloud:{mod:null,user:null,unsub:null,watch:0,lastPub:0,lastStatus:null,lastMs:0}
+  cloud:{mod:null,user:null,unsub:null,unsubPrefs:null,watch:0,lastPub:0,lastStatus:null,lastMs:0}
 };
 
 /* ----------------------------------------------------------------- theme -- */
@@ -1111,6 +1111,11 @@ function loadCloud(){
 }
 function onCloudUser(u){
   state.cloud.user=u||null;
+  try{
+    if(u){localStorage.setItem('ripe.cloud','1');}
+    else{localStorage.removeItem('ripe.cloud');}
+  }catch(e){}
+  startPrefsSync();     /* settings follow the account, whatever the sync mode */
   applyCloud();
 }
 function updateAccountUI(){
@@ -1224,6 +1229,51 @@ function cloudMaybePublish(d){
   c.mod.publish(c.user.uid,d).then(function(){
     if(changed||first){c.mod.addReading(c.user.uid,{t:d.t||logTime(),status:d.status,avg:d.avg});}
   }).catch(function(){});
+}
+
+/* ------------------------------------------------ settings follow the account */
+/* The look-and-feel settings are stored once per account (users/{uid}/prefs/main)
+   and every signed-in device both reads and writes them, so the phone and the
+   browser stay identical. Device-specific choices (data source, ESP32 address,
+   publish/follow) are NOT shared — a phone on BLE and a browser on the mock
+   server could never agree on those. */
+var CLOUD_PREF_KEYS=['theme','font','mode','pollMs'];
+function cloudReady(){return !!state.cloud.user&&!!state.cloud.mod;}
+function syncedPrefs(){
+  var o={},i;
+  for(i=0;i<CLOUD_PREF_KEYS.length;i++){o[CLOUD_PREF_KEYS[i]]=state.prefs[CLOUD_PREF_KEYS[i]];}
+  return o;
+}
+function pushPrefsNow(){
+  if(!cloudReady()){return;}
+  state.cloud.mod.pushPrefs(state.cloud.user.uid,syncedPrefs()).catch(function(){});
+}
+function applyRemotePrefs(p){
+  var q=state.prefs,changed=false,i,k;
+  for(i=0;i<CLOUD_PREF_KEYS.length;i++){
+    k=CLOUD_PREF_KEYS[i];
+    if(p[k]!==undefined&&p[k]!==null&&p[k]!==q[k]){q[k]=p[k];changed=true;}
+  }
+  if(!changed){return;}
+  q.pollMs=[1000,2000,5000].indexOf(parseInt(q.pollMs,10))>=0?parseInt(q.pollMs,10):2000;
+  if(q.theme!=='light'&&q.theme!=='dark'&&q.theme!=='system'){q.theme='system';}
+  if(q.font!=='grotesk'&&q.font!=='editorial'){q.font='grotesk';}
+  if(q.mode!=='basic'&&q.mode!=='advanced'){q.mode='advanced';}
+  savePrefs();
+  applyTheme();applyFont();applyMode();startPolling();syncSettingsForm();
+  setAcct('Synced from another device.',false);
+}
+function startPrefsSync(){
+  var c=state.cloud;
+  if(c.unsubPrefs){c.unsubPrefs();c.unsubPrefs=null;}
+  if(!cloudReady()){return;}
+  c.unsubPrefs=c.mod.watchPrefs(c.user.uid,function(p){
+    if(!p){                                  /* nothing stored yet → seed it */
+      c.mod.pushPrefs(c.user.uid,syncedPrefs()).catch(function(){});
+      return;
+    }
+    applyRemotePrefs(p);
+  },function(){});
 }
 
 /* ------------------------------------------------------------------- wire -- */
@@ -1383,6 +1433,7 @@ function saveSettings(){
     });
   }
   applyCloud();
+  pushPrefsNow();
   setMsg('Saved — '+(p.source==='ble'?'Bluetooth':p.source)+' source'
     +(p.source==='ble'?'':', polling every '+fmt(p.pollMs)+' ms')+'.',false);
 }
@@ -1399,9 +1450,9 @@ function persistServerSettings(){
     var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
     setSeg(id,b.dataset.v);
     if(id==='segSource'||id==='segTransport'||id==='segSync'){refreshSettingsHints();}
-    if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();}
-    if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();}
-    if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();}
+    if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();pushPrefsNow();}
+    if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();pushPrefsNow();}
+    if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();pushPrefsNow();}
   });
 });
 $('signInBtn').addEventListener('click',function(){
@@ -1472,7 +1523,7 @@ startPolling();
 pollHTTP();
 updateAccountUI();
 updateCloudFoot();
-if(state.prefs.sync!=='off'){loadCloud().catch(function(){});}
+if(state.prefs.sync!=='off'||localStorage.getItem('ripe.cloud')==='1'){loadCloud().catch(function(){});}
 if(isLocalHost()){initFromServer();}   /* only the local server has /server-info */
 setTimeout(function(){if(!state.online&&state.fails<3){pollHTTP();}},600);
 </script>
