@@ -1133,7 +1133,7 @@ function updateCloudFoot(){
   var el=$('footCloud');if(!el){return;}
   var s=state.prefs.sync,u=state.cloud.user;
   if(s==='off'){el.hidden=true;el.textContent='';return;}
-  el.textContent='Cloud · '+(s==='publish'?'publishing':s==='follow'?'following':'off')+
+  el.textContent='Cloud · '+(s==='publish'?(state.demo?'publishing demo':'publishing'):s==='follow'?'following':'off')+
     (u&&u.email?' · '+u.email:' · not signed in');
   el.hidden=false;
 }
@@ -1219,8 +1219,10 @@ function cloudLoadHistory(){
 }
 function cloudMaybePublish(d){
   var c=state.cloud;
-  if(state.prefs.sync!=='publish'||!c.user||!c.mod||state.demo){return;}
+  if(state.prefs.sync!=='publish'||!c.user||!c.mod){return;}
   if(typeof c.mod.publish!=='function'){return;}
+  /* Demo readings publish too, so the publish → follow loop can be tested with
+     no ESP32. The snapshot keeps mode 'DEMO' so followers can tell. */
   var now=Date.now();
   var changed=(d.status!==c.lastStatus);
   if(!changed&&now-c.lastPub<CLOUD_MS){return;}
