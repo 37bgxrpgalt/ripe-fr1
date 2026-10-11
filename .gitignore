@@ -2,6 +2,13 @@
 # Wi-Fi credentials live here; only config.example.h is tracked.
 esp32/food_spoilage_monitor/config.h
 
+# Firebase Android config (public, but kept out so the repo carries no project keys).
+google-services.json
+
+# Signing material.
+*.jks
+*.keystore
+
 # ── local server state (persisted address) ────────────────────────────────
 web/settings.json
 

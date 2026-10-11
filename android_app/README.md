@@ -1,25 +1,105 @@
-# Smart Food Monitor - Android App
+# Ripe FR‑1 — Android app
 
-This folder contains a starter Jetpack Compose `MainActivity.kt` file using Material You (Material 3) design.
+The native Android dashboard for the **Ripe FR‑1** food‑freshness meter. It mirrors
+the web dashboard 1:1 (Braun‑inspired warm‑gray UI, Space Grotesk + Urbanist,
+dark mode, Basic / Advanced view) and adds:
 
-## How to use this with Android Studio:
+- **Wi‑Fi / BLE / mock** data sources,
+- **Settings that follow the account** — theme, typeface, Basic/Advanced and the
+  poll interval sync through Firebase,
+- **Cloud sync** — one device *publishes* its readings, others *follow*,
+- **Email + password and Google sign‑in** (via Credential Manager).
 
-1. **Create a New Project:** Open Android Studio and select **New Project**.
-2. **Choose Template:** Select **Empty Activity** (which uses Jetpack Compose by default).
-3. **Name:** Name it "Food Monitor".
-4. **Copy Code:** Copy the contents of `MainActivity.kt` provided in this folder and replace the generated `MainActivity.kt` in your project (`app/src/main/java/com/example/foodmonitor/MainActivity.kt`).
-5. **Add Internet Permission:** Open your `AndroidManifest.xml` (in `app/src/main/AndroidManifest.xml`) and add:
-   ```xml
-   <uses-permission android:name="android.permission.INTERNET" />
-   ```
-6. **Testing:** If your phone is connected to the ESP32's Access Point (`FoodMonitor-XXXX`), the app will immediately pull data from `http://192.168.4.1/data`. If using a local Wi-Fi router, replace the IP in the code with the ESP32's assigned IP.
+| | |
+|---|---|
+| Package | `com.example.foodmonitor` |
+| App name | **Ripe FR‑1** |
+| Min SDK | 24 (Android 7) |
+| Compile / target SDK | 34 |
+| Kotlin / AGP | 1.9.22 / 8.2.2 |
+| UI | Jetpack Compose (BOM 2024.02.00), Material 3 |
 
-## Adding BLE (Bluetooth Low Energy) Support
-The ESP32 code is already advertising a Nordic UART BLE Service (`6e400001-b5a3-f393-e0a9-e50e24dcca9e`).
-To connect to it from Android when Wi-Fi is down:
-1. Add BLE permissions to `AndroidManifest.xml` (`BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`, `ACCESS_FINE_LOCATION`).
-2. Use Android's `BluetoothLeScanner` to scan for the device name `FoodMonitor`.
-3. Connect using `BluetoothGatt`, discover services, and subscribe to the TX characteristic (`6e400003-b5a3-f393-e0a9-e50e24dcca9e`) to receive the JSON strings just like the HTTP endpoint.
-4. (Optional) You can use a library like [Nordic Android-BLE Library](https://github.com/NordicSemiconductor/Android-BLE-Library) for much easier Bluetooth integration.
+---
 
-Alternatively, you can test the BLE functionality immediately without writing code by downloading **nRF Connect for Mobile** or **Serial Bluetooth Terminal** from the Play Store, connecting to "FoodMonitor", and listening to the TX characteristic!
+## Download & install (no build needed)
+
+1. Open the repo's **Releases** page (right‑hand sidebar of the GitHub repo) and
+   download **`app-debug.apk`**.
+2. On the phone, allow *Install unknown apps* for whichever app you use to open
+   the file (browser / Files).
+3. Tap the APK to install. Debug APKs are self‑signed, so Android may warn about
+   an "unknown developer" — that is expected for sideloaded builds.
+
+---
+
+## Build from source
+
+1. Open **this folder** (`android_app/`) in **Android Studio** (Hedgehog or newer)
+   and allow the Gradle sync to finish.
+2. **Add your own Firebase config.** In the [Firebase console](https://console.firebase.google.com/)
+   create (or open) a project, add an **Android** app with package name
+   `com.example.foodmonitor`, download `google-services.json`, and place it at
+   `app/google-services.json`. Without this file the build fails with a clear
+   "File google-services.json is missing" message.
+3. *(Optional, for Google sign‑in)* Register your signing **SHA‑1** under
+   *Project settings → your Android app → Add fingerprint*, then re‑download
+   `google-services.json`.
+4. Run ▶ on a device or emulator that has **Google Play services**.
+
+Command line (with the bundled Gradle wrapper):
+
+```bash
+./gradlew :app:assembleDebug        # macOS / Linux
+gradlew.bat :app:assembleDebug      # Windows
+# output: app/build/outputs/apk/debug/app-debug.apk
+```
+
+For a release APK, add a `signingConfig` in `app/build.gradle.kts` and run
+`:app:assembleRelease`.
+
+---
+
+## Secrets — what is *not* here
+
+- **`app/google-services.json`** is intentionally **not** committed. It is public
+  config, but keeping it out means the repo carries no project‑specific keys; any
+  `api_key` in it would be readable by anyone who could already build the app.
+  Supply your own to build (step 2 above).
+- **Wi‑Fi credentials** live in the **firmware**
+  (`esp32/food_spoilage_monitor/config.h`), which is git‑ignored. This folder
+  contains none.
+- Keystores (`*.jks`, `*.keystore`) are git‑ignored.
+
+---
+
+## BLE device name
+
+The app scans for the BLE name **`FoodMonitor`**, which is exactly what the
+firmware advertises (`BLE_DEVICE_NAME` in
+`esp32/food_spoilage_monitor/config.h`). Do not rename one without the other.
+The Nordic‑UART service/characteristic UUIDs live in `MainActivity.kt`
+(`object BleUart`).
+
+---
+
+## Layout
+
+```
+android_app/
+├── app/
+│   ├── build.gradle.kts
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/com/example/foodmonitor/
+│       │   ├── MainActivity.kt     ← the whole UI (dashboard, settings, BLE, cloud)
+│       │   └── RipeCloud.kt        ← Firebase auth + Firestore sync
+│       └── res/                    ← fonts, launcher icon, strings
+├── build.gradle.kts
+├── settings.gradle.kts
+├── gradle.properties
+├── gradlew / gradlew.bat + gradle/wrapper/
+└── STATEAPP.MD                     ← app working log
+```
+
+See the root [`README.md`](../README.md) for the whole project and
+[`FIREBASE_SETUP.md`](../FIREBASE_SETUP.md) for the cloud setup.

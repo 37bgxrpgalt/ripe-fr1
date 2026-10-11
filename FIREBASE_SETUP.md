@@ -32,19 +32,26 @@ marked **→ SEND ME** and I'll wire the code.
    (that's step 7).
 3. Copy the whole `firebaseConfig = { … }` snippet and paste it to me.
 
-### 3 · Register the **Android** app  → SEND ME the file
+### 3 · Register the **Android** app  → drop the file in
 1. **Add app** → **Android**.
 2. Android package name: **`com.example.foodmonitor`** (must match exactly — it's
    the `applicationId` in `app/build.gradle.kts`).
 3. Nickname: `Ripe Android`. Register.
 4. Download **`google-services.json`** → drop it in `D:\FoodMonitorApp\app\`.
-5. (Later, when we add the Android SDK.) Google sign-in on Android also wants the
-   **SHA-1** of the signing key: run this in `D:\FoodMonitorApp` and add the
-   `debug` fingerprint under Project settings → your Android app → *Add
-   fingerprint*:
-   ```
-   .\gradlew signinReport
-   ```
+   The Gradle build **fails with a clear message until that file is there** (the
+   `com.google.gms.google-services` plugin reads it). It holds only public
+   project config — safe to keep next to the app.
+5. **Google sign-in on Android** (optional — the app has a *Use Google instead*
+   button). Enable it by adding the signing fingerprint:
+   - Run the **signingReport** Gradle task (Gradle panel → FoodMonitorApp →
+     Tasks → android → `signingReport`), or list the debug keystore directly.
+     On this build PC the debug **SHA‑1** is
+     `00:D7:09:CD:17:E9:AA:C6:46:8A:12:CB:80:2A:49:72:3A:3C:9D:68`.
+   - Project settings → your Android app → *Add fingerprint* → paste the SHA‑1.
+   - Re‑download `google-services.json` and replace
+     `D:\FoodMonitorApp\app\google-services.json`.
+   - The device/emulator needs **Google Play services**.
+   Email + password needs none of this — it works without a SHA‑1.
 
 ### 4 · Enable sign-in
 1. **Build → Authentication → Get started**.
@@ -53,8 +60,9 @@ marked **→ SEND ME** and I'll wire the code.
    needs no SHA‑1 or Play‑Services setup, and the web has the same email +
    password form, so a phone and a browser sign in to the *same* account.
 3. **Sign-in method → Google → Enable** (optional). Pick a support email →
-   **Save**. The web can also use Google, but then the phone must use Google too
-   to share a uid.
+   **Save**. The web can use Google right away; the phone can too once its SHA‑1
+   is registered (step 3.5). Sign in with the *same* Google account on both to
+   share a uid.
 4. **Authentication → Settings → Authorized domains**: `localhost` is there by
    default. **Add `37bgxrpgalt.github.io`** — that's the GitHub Pages host of the
    cloud dashboard (see step 7). Without this, the Google pop‑up fails with
@@ -113,11 +121,12 @@ users/{uid}/
 updatedAt` — so the **same** dashboard renders reads with no special-casing.
 
 ### Household sharing (how the chosen model maps onto the data)
-- Person A sits at home and opens the dashboard (or the Android app) on the same
-  Wi‑Fi as the ESP32, signs in with the household Google account, and picks
-  **Publish this device**. Their browser reads the board and writes each snapshot
-  to `users/{uid}/state/latest` + a `readings` doc per status change.
-- Everyone else signs in with the **same** Google account and picks **Follow the
+- Person A sits at home and opens the dashboard (or the Android app) on the same
+  Wi‑Fi as the ESP32, signs in with the shared account (an email + password you
+  create once), and picks **Publish this device**. That device reads the board and
+  writes each snapshot to `users/{uid}/state/latest` + a `readings` doc per status
+  change.
+- Everyone else signs in with the **same** account and picks **Follow the
   cloud** — from the sofa, from work, from anywhere — and renders that doc in
   real time. No extra setup, no second account.
 
@@ -146,13 +155,30 @@ updatedAt` — so the **same** dashboard renders reads with no special-casing.
   ESP32 address stay per-device.
 - The header connection chip shows the account + sync state.
 
-### Android (after the web side is verified)
-- Firebase Auth (`Google` sign-in) + Firestore via the BOM; `google-services.json`
-  + the `com.google.gms.google-services` Gradle plugin.
-- Same **Account** + **Cloud sync** settings, the same `state/latest` +
-  `readings` + `prefs/main` documents — so a phone can publish to the ESP32 over
-  Wi-Fi/BLE and the web (or another phone) follows, and the theme/font/mode match
-  on every device.
+### Android (`D:\FoodMonitorApp`) additions
+- Firebase **Auth (email + password)** + **Firestore** via the BOM (`32.7.4`) and
+  the `com.google.gms.google-services` Gradle plugin; config from
+  `app/google-services.json`.
+- `RipeCloud.kt` — the Android mirror of `web/firebase.js`: `watchAuth`,
+  sign-in/create/sign-out (**email + password** and **Google**), `watchPrefs`/
+  `pushPrefs`, `publish`/`watchLatest`/`recentReadings`, with the same 10 s
+  publish throttle and the same document shapes. It normalises the app's
+  `"Dark"` to the web's `"dark"` on the wire. Google uses **Credential Manager**
+  (the `default_web_client_id` from `google-services.json`, so its account-chooser
+  bottom sheet is shown) exchanged for a Firebase credential, so it lands on the
+  same `uid`.
+- The Settings sheet gains **Account** (email + password, Sign in / Create
+  account / **Use Google instead** / Sign out) and **Cloud sync** (Off / Publish
+  this device / Follow the cloud), matching the web.
+- Signed in, the app **reads and writes `users/{uid}/prefs/main`** (theme, font,
+  mode, poll interval) so its look & feel tracks the browser; and it can
+  **publish** its local (Wi‑Fi/BLE/mock) reading to `state/latest` or **follow**
+  the cloud (polling stops, the cloud doc drives the dashboard, and the recent
+  history seeds the Status panel).
+- The connection chip shows `CLOUD · <account>` while following.
+- Build/run is done in **Android Studio** (this PC builds offline and can't fetch
+  Firebase); add `google-services.json` and enable the Email/Password provider
+  first.
 
 ### Why the ESP32 doesn't talk to Firebase directly
 The board has no Firebase credentials and is usually on its own AP with no
@@ -160,11 +186,11 @@ internet. Publishing is done by a **client** that can reach the board.
 
 ---
 
-## What I need from you
-1. The **`firebaseConfig`** object (step 2).
-2. Confirmation that Google sign-in, Firestore and the rules are done
-   (steps 4–6).
+## What I need from you now
+1. **`google-services.json`** in `D:\FoodMonitorApp\app\` (step 3).
+2. **Email/Password** enabled in Firebase (step 4.2) — then create one account
+   with the **Create account** button on the web.
+3. Build/run the app in **Android Studio** (online Gradle sync) and send me any
+   build errors.
 
-Once I have those I'll build and verify the **web** side first, then add the
-Android SDK (that needs an online Gradle sync in Android Studio — this PC builds
-the app offline and can't fetch the Firebase dependencies).
+The web side is already live at <https://37bgxrpgalt.github.io/ripe-fr1/>.

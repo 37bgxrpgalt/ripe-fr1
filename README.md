@@ -32,6 +32,12 @@ ripe-fr1/
 │   ├── mock_server.ps1                ← local server: mock sensor + ESP32 bridge (Windows)
 │   ├── mock_server.py                 ← same thing (macOS/Linux)
 │   └── settings.json                  ← last-saved ESP32 address — LOCAL ONLY, git-ignored
+├── android_app/                       ← native Android app (Kotlin + Jetpack Compose)
+│   ├── app/src/main/java/com/example/foodmonitor/
+│   │   ├── MainActivity.kt            ← dashboard, settings, BLE, cloud
+│   │   └── RipeCloud.kt               ← Firebase auth + Firestore sync
+│   ├── app/google-services.json       ← Firebase config — LOCAL ONLY, git-ignored
+│   └── README.md                      ← build & install instructions
 └── tools/
     ├── embed_page.ps1                 ← regenerates web_page.h (Windows)
     └── embed_page.py                  ← same thing (macOS/Linux)
@@ -268,3 +274,29 @@ published.
 `esp32/food_spoilage_monitor/config.h` (Wi-Fi SSID/password) is **git-ignored**;
 the committed `config.example.h` is a masked template — copy it to `config.h` and
 fill in your own values.
+
+---
+
+## 11. Android app (`android_app/`)
+
+The same dashboard as a native **Kotlin / Jetpack Compose** app — identical look,
+identical Settings (theme, typeface, Basic/Advanced, poll interval), plus the
+connectivity the browser can't offer: **Wi-Fi, BLE (Nordic-UART) and cloud sync**
+on the same account (`FIREBASE_SETUP.md`).
+
+### Download & install
+1. Open the repo's **Releases** page (right-hand sidebar: *Releases*).
+2. Download **`app-debug.apk`**.
+3. On the phone, allow *Install unknown apps* for your browser / Files app, then
+   tap the APK. Debug builds are self-signed, so an "unknown developer" warning is
+   normal.
+4. The installed app is named **Ripe FR‑1**.
+
+### Build from source
+Open `android_app/` in Android Studio, drop your own
+`android_app/app/google-services.json` in place (it is *not* committed), and Run.
+Full details: [`android_app/README.md`](android_app/README.md).
+
+> The app scans for the BLE name **`FoodMonitor`** — the name the firmware
+> advertises (`BLE_DEVICE_NAME` in `esp32/food_spoilage_monitor/config.h`).
+> Rename one only if you rename the other and reflash.

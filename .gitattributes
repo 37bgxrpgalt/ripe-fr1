@@ -1,0 +1,9 @@
+# Shell scripts must keep LF so ./gradlew runs on macOS/Linux.
+android_app/gradlew text eol=lf
+# Windows batch wrapper.
+android_app/gradlew.bat text eol=crlf
+# Binary assets — never text-convert.
+*.ttf binary
+*.jar binary
+*.apk binary
+*.png binary

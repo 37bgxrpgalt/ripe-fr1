@@ -7,7 +7,13 @@ this PC the root is `D:\Webserver\` (it was moved here from the flaky `E:\`
 removable drive — see caveats). So `E:\ (or D:\)Webserver\...` means
 `E:\Webserver\...` or `D:\Webserver\...` on the relevant machine.
 
-Last updated: 2026-10-11: **Firebase cloud sync added to the web dashboard** (household Google account; web first). Earlier today: pushed to GitHub (`37bgxrpgalt/ripe-fr1`); README refreshed; GitHub Pages prep.
+Last updated: 2026-10-11: **Android app added to this repo** — the full Kotlin /
+Compose project now lives in `android_app/` alongside `web/` (one repo, web stays
+web, app stays app). App renamed to **Ripe FR‑1**; Google sign‑in on Android moved
+to Credential Manager. `google-services.json` + keystores are git‑ignored; APK is
+published via a GitHub **Release**. Earlier: **Firebase cloud sync** added to the
+web dashboard (household Google account; web first); pushed to GitHub
+(`37bgxrpgalt/ripe-fr1`); README refreshed; GitHub Pages live.
 
 ---
 
@@ -357,6 +363,20 @@ Wi‑Fi runs **Publish this device**; everyone else runs **Follow the cloud**.
   valid values; a signed-out module load leaves `cloudReady()` false with
   **0 console errors**.
 - Not yet verified: the real two-device round-trip (needs the Google account).
+
+### Android side (added same day)
+- The app at `D:\FoodMonitorApp` now has the same **Account** (email + password)
+  and **Cloud sync** (Off / Publish / Follow) groups, plus a new `RipeCloud.kt`
+  that mirrors `firebase.js` 1:1 on the same documents
+  (`users/{uid}/prefs/main`, `state/latest`, `readings/{id}`). Signed in, the phone
+  reads and writes the shared prefs live (theme/font/mode/poll), can **publish**
+  its Wi-Fi/BLE/mock reading, and can **follow** the cloud (local polling stops;
+  the cloud doc drives the dashboard and seeds the Status history). It normalises
+  the app's `"Dark"` / `"Basic"` to the web's lowercase at the wire so one doc
+  works for both. Added the `com.google.gms.google-services` plugin + Firebase BOM
+  `32.7.4`; the build needs `app/google-services.json` (see `FIREBASE_SETUP.md`).
+  **Build and verify in Android Studio** — the Firebase deps can't be fetched
+  offline on this PC, so there was no compile check here.
 
 ### Still unverified (needs a real Google account)
 - The Google sign-in popup itself, a real publish → follow round-trip, and the
