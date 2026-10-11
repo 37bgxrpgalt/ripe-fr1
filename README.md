@@ -22,9 +22,12 @@ ripe-fr1/
 │       ├── food_spoilage_monitor.ino  ← main firmware (Wi-Fi + AP + BLE + CORS)
 │       ├── config.h                   ← Wi-Fi credentials & pins — LOCAL ONLY, git-ignored
 │       ├── config.example.h           ← masked template (copy to config.h and fill in)
-│       └── web_page.h                 ← AUTO-GENERATED embedded dashboard
+│       ├── web_page.h                 ← AUTO-GENERATED embedded dashboard
+│       └── favicon_svg.h              ← AUTO-GENERATED embedded tab icon
 ├── web/
 │   ├── index.html                     ← source of truth for the UI (has Settings + dark mode)
+│   ├── firebase.js                    ← optional cloud sync — Firebase SDK, loaded on demand
+│   ├── firebase-config.js             ← public Firebase web config (project ripe-fr1)
 │   ├── favicon.svg                    ← tab icon (also embedded in the firmware)
 │   ├── mock_server.ps1                ← local server: mock sensor + ESP32 bridge (Windows)
 │   ├── mock_server.py                 ← same thing (macOS/Linux)
@@ -131,6 +134,7 @@ Rule enforced in hardware and UI: `floor < warning < spoiled < ceil`.
 - **Calibration panel** — four inputs with the enforced rule `floor < warning < discard < ceiling` (0–4095), Save / Undo / Use suggested. Values persist to ESP32 NVS flash.
 - **Device block** — transport, IP, RSSI, uptime, thresholds. Bluetooth action lives one level down (not in primary nav).
 - **Settings** (header button) — pick the **data source** (*Mock server*, *ESP32 (Wi‑Fi)* or *Bluetooth (BLE)*), the ESP32 host/IP + port, the route (*Via local server* proxy vs *Direct from browser*), the **poll interval** (1/2/5 s), the **dashboard mode** (*Basic* / *Advanced*), the **theme** and the **typeface** (Grotesk / Editorial). Stored in `localStorage`, never on the device.
+- **Optional cloud sync (Firebase)** — sign in with Google under **Settings → Account**, then pick **Cloud sync**: *Publish this device* mirrors this device's readings to `users/{uid}/state/latest` (plus a history doc per status change), or *Follow the cloud* renders another device's readings from anywhere. The household shares one Google account. The Firebase SDK is loaded **on demand**, so the ESP32's offline page never touches it. Setup: [`FIREBASE_SETUP.md`](FIREBASE_SETUP.md).
 - **Dark & light mode** — the same Braun palette with a warm near-black surface ladder; the graphite readout stays dark in both. Chosen in **Settings → Appearance**: Light / Dark / System (follows the OS).
 - Polls `GET /data` **every 2 s** (configurable), updates in place, never reloads.
 - Graceful failure: 1–3 failed polls → amber *Reconnecting…*; 4+ → red *Disconnected*, keeps last known values visible (dimmed).

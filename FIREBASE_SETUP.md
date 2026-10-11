@@ -4,6 +4,12 @@ Goal: sign in once with Google and see the **same readings and history** on the
 web dashboard *and* the Android app — whichever device is actually talking to the
 ESP32.
 
+**Household model (chosen):** everyone in the house signs in with the **same
+Google account**, so they all get the same `uid` and therefore the same data. One
+device — the one on the ESP32's Wi‑Fi — runs **Publish this device**; everyone
+else runs **Follow the cloud**. Real per-person isolation is still available
+later with zero code changes, because the rules already key off `uid`.
+
 Everything in **Part A** is console work you do once (it needs your Google account
 and creates resources in your project). When it's done, send me the two items
 marked **→ SEND ME** and I'll wire the code.
@@ -41,14 +47,17 @@ marked **→ SEND ME** and I'll wire the code.
 1. **Build → Authentication → Get started**.
 2. **Sign-in method → Google → Enable**. Pick a support email → **Save**.
 3. **Authentication → Settings → Authorized domains**: `localhost` is there by
-   default. We'll add the Firebase Hosting domain in step 7.
+   default. **Add `37bgxrpgalt.github.io`** — that's the GitHub Pages host of the
+   cloud dashboard (see step 7). Without this, the Google pop‑up fails with
+   `auth/unauthorized-domain`.
 
 > **Why this matters:** Google sign-in only works on a *real domain* (or
 > `localhost`) — **not** on a bare IP such as `http://192.168.1.57`. The ESP32
 > serves its page from an IP, so that page can never sign in. That's why the
-> cloud version of the web dashboard is deployed to **Firebase Hosting**
-> (`https://<project>.web.app`), while the ESP32 keeps serving the embedded page
-> as the local / offline fallback.
+> cloud dashboard is published to **GitHub Pages**
+> (`https://37bgxrpgalt.github.io/ripe-fr1/`), whose host must be in the
+> Authorized domains list above. The ESP32 keeps serving the embedded page as the
+> local / offline fallback.
 
 ### 5 · Create Firestore
 **Build → Firestore Database → Create database** → **Production mode** → choose a
@@ -70,10 +79,13 @@ service cloud.firestore {
 
 Each person can only read/write their own `users/{uid}` tree.
 
-### 7 · Firebase Hosting (do this when the web code is ready)
-**Build → Hosting → Get started**. I'll give you the exact `firebase.json` and
-`firebase deploy` command then — this is what creates the `https://…web.app`
-domain that step 4 needs.
+### 7 · Hosting — already done, nothing to set up
+The cloud dashboard is already published by the **Deploy dashboard** GitHub
+Actions workflow to `https://37bgxrpgalt.github.io/ripe-fr1/`. **Firebase Hosting
+is not required** — you can add it later if you ever want a `…web.app` domain,
+but GitHub Pages is free, already live, and enough. Just make sure
+`37bgxrpgalt.github.io` is in **Authentication → Settings → Authorized domains**
+(step 4), or the Google pop‑up is rejected.
 
 ---
 
@@ -89,6 +101,21 @@ users/{uid}/
 `state/latest` fields mirror `/data` exactly —
 `raw, avg, pct, status, thr_warn, thr_spoiled, cal_floor, cal_ceil, t, source,
 updatedAt` — so the **same** dashboard renders reads with no special-casing.
+
+### Household sharing (how the chosen model maps onto the data)
+- Person A sits at home and opens the dashboard (or the Android app) on the same
+  Wi‑Fi as the ESP32, signs in with the household Google account, and picks
+  **Publish this device**. Their browser reads the board and writes each snapshot
+  to `users/{uid}/state/latest` + a `readings` doc per status change.
+- Everyone else signs in with the **same** Google account and picks **Follow the
+  cloud** — from the sofa, from work, from anywhere — and renders that doc in
+  real time. No extra setup, no second account.
+
+> **⚠ The publisher has to stay on the home Wi‑Fi.** The cloud values are only
+> *live* while some publisher (a phone/tablet on the ESP32's network, ideally an
+> always‑on one) is running. When it leaves the network the cloud keeps the last
+> snapshot and marks it stale. Removing that dependency means teaching the ESP32
+> to push to the cloud itself — a later firmware option.
 
 ### Web (`web/index.html`) additions
 - Loads the Firebase **compat/auth/firestore** SDKs from the CDN (only when a

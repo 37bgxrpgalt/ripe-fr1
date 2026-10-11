@@ -7,7 +7,7 @@ this PC the root is `D:\Webserver\` (it was moved here from the flaky `E:\`
 removable drive — see caveats). So `E:\ (or D:\)Webserver\...` means
 `E:\Webserver\...` or `D:\Webserver\...` on the relevant machine.
 
-Last updated: 2026-10-11: pushed to GitHub (`37bgxrpgalt/ripe-fr1`); README refreshed (live screenshot + tree); GitHub Pages prep (`config.example.h`, workflow, relative favicon)
+Last updated: 2026-10-11: **Firebase cloud sync added to the web dashboard** (household Google account; web first). Earlier today: pushed to GitHub (`37bgxrpgalt/ripe-fr1`); README refreshed; GitHub Pages prep.
 
 ---
 
@@ -294,6 +294,55 @@ status history** (status + time, no counts) and the chamber illustration.
 - Toggling back to **Advanced** restores every panel and the numeric hint
   (e.g. "1,334 counts — 334 above the 1,000-count clean-air floor.").
 - Browser console: **no errors**.
+
+---
+
+## Update — 2026-10-11: **Firebase cloud sync** on the web (household model)
+
+Chosen model: the whole household signs in with **one Google account**, so every
+device gets the same `uid` and shares `users/{uid}/…`. One device on the ESP32's
+Wi‑Fi runs **Publish this device**; everyone else runs **Follow the cloud**.
+
+### New files
+- `web/firebase-config.js` — the `firebaseConfig` from the Firebase console
+  (project **`ripe-fr1`**). Public by design; access is governed by the Firestore
+  rules + Authorized domains, not by hiding this file.
+- `web/firebase.js` — ES-module SDK **v13.0.0** from the Firebase CDN
+  (`firebase-app` / `firebase-auth` / `firebase-firestore`); exports
+  `onUser, signIn, signOutNow, publish, addReading, follow, recentReadings`.
+  Data model: `users/{uid}/state/latest` (one snapshot doc) +
+  `users/{uid}/readings/{autoId}` (one doc per status change).
+
+### `web/index.html`
+- Loads the SDK **on demand** via a guarded `import('./firebase.js')`
+  (`loadCloud()`), so the ESP32's offline page — which has no `firebase.js` and
+  no internet — never touches Firebase. New pref `sync`, default **off**.
+- **Settings → Account** (`Sign in with Google` / email / `Sign out`) and
+  **Settings → Cloud sync** segment (`Off` / `Publish this device` /
+  `Follow the cloud`).
+- `cloudMaybePublish()` mirrors each local snapshot to Firestore (≥10 s between
+  writes, plus immediately on every status change, which also appends a
+  `readings` doc). Demo data is never published.
+- **Follow** subscribes to `state/latest` with `onSnapshot`, stops local polling,
+  renders the doc through the existing `applyData()`, loads history from
+  `readings`, and runs a 30 s staleness watchdog ("Cloud data is stale").
+- Footer line `Cloud · publishing/following · <email>`.
+- Hosted-page fix: when the source is Mock **and** the page is not localhost, the
+  "Disconnected" banner now explains there is no local server here and points at
+  *Preview demo data* / *Follow the cloud* instead of "restart mock_server.ps1".
+
+### Verified on this PC (PowerShell server `:8011`, browser tool)
+- `GET /`, `/data`, `firebase.js`, `firebase-config.js` all `200`; mock stream live.
+- `loadCloud()` imports the SDK from `gstatic`; `onUser` fires with `null`
+  (signed out); **0 console errors/warnings**.
+- Settings shows **Account** + **Cloud sync**; the hint updates per choice; saving
+  **Follow** while signed out shows the guard message and the footer
+  `Cloud · following · not signed in`; back to **Off** hides it.
+- `web_page.h` regenerated (65 KB; payload **byte-identical** to `index.html`).
+
+### Still unverified (needs a real Google account)
+- The Google sign-in popup itself, a real publish → follow round-trip, and the
+  Firestore security rules — test on the live Pages URL.
 
 ---
 

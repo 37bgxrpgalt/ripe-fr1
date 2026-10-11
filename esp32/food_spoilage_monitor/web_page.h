@@ -465,6 +465,7 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
 
   <footer>
     <span>Ripe FR‑1 · firmware 1.4.0 · polls <code>/data</code> every <span id="footMs">2,000</span> ms</span>
+    <span id="footCloud" hidden></span>
     <button class="linkish" id="demoBtn">Preview demo data</button>
   </footer>
 
@@ -545,6 +546,26 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
         <p class="hint">Firmware cadence is 2,000 ms (<code>REFRESH_MS</code> in config.h); faster polls return the same sample.</p>
       </div>
 
+      <div class="grp" id="acctGrp">
+        <h3>Account</h3>
+        <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in with the household Google account to share readings.</p>
+        <div class="actions" style="margin-top:0">
+          <button class="btn-quiet" id="signInBtn" type="button">Sign in with Google</button>
+          <button class="btn-quiet" id="signOutBtn" type="button" hidden>Sign out</button>
+          <span class="msg" id="acctMsg" aria-live="polite"></span>
+        </div>
+      </div>
+
+      <div class="grp" id="syncGrp">
+        <h3>Cloud sync</h3>
+        <div class="seg" id="segSync" role="radiogroup" aria-label="Cloud sync">
+          <button type="button" data-v="off" role="radio">Off</button>
+          <button type="button" data-v="publish" role="radio">Publish this device</button>
+          <button type="button" data-v="follow" role="radio">Follow the cloud</button>
+        </div>
+        <p class="hint" id="syncHint">Off — everything stays in this browser.</p>
+      </div>
+
       <div class="actions">
         <button class="btn-primary" id="setSave">Save &amp; connect</button>
         <button class="btn-text" id="testBtn">Test connection</button>
@@ -577,7 +598,7 @@ var SUGGESTED={warn:1600,spoiled:2600,floor:1000,ceil:3800};
              'direct' = browser talks to the ESP32 itself (needs CORS)     */
 var PREF_KEY='ripe.settings';
 var PREF_DEFAULTS={theme:'system',font:'grotesk',mode:'advanced',
-                   source:'mock',transport:'proxy',
+                   source:'mock',transport:'proxy',sync:'off',
                    host:'192.168.1.57',port:80,pollMs:2000};
 function loadPrefs(){
   var o={},k;
@@ -593,6 +614,7 @@ function loadPrefs(){
   if(o.theme!=='light'&&o.theme!=='dark'&&o.theme!=='system'){o.theme='system';}
   if(o.font!=='grotesk'&&o.font!=='editorial'){o.font='grotesk';}
   if(o.mode!=='basic'&&o.mode!=='advanced'){o.mode='advanced';}
+  if(o.sync!=='off'&&o.sync!=='publish'&&o.sync!=='follow'){o.sync='off';}
   return o;
 }
 function savePrefs(){try{localStorage.setItem(PREF_KEY,JSON.stringify(state.prefs));}catch(e){}}
@@ -620,7 +642,8 @@ var state={
   status:'WAITING', since:null, samples:[], entries:[],
   pending:0, fails:0, demo:false, demoTick:0, last:null,
   calDirty:false, cfgFromDevice:null,
-  ble:null, bleCmd:'', bleBuf:'', bleOK:false, bleFail:false, bleHeart:0, bleName:'', bleSeen:0
+  ble:null, bleCmd:'', bleBuf:'', bleOK:false, bleFail:false, bleHeart:0, bleName:'', bleSeen:0,
+  cloud:{mod:null,user:null,unsub:null,watch:0,lastPub:0,lastStatus:null,lastMs:0}
 };
 
 /* ----------------------------------------------------------------- theme -- */
@@ -735,14 +758,19 @@ function onFail(){
   }else{
     b.className='banner is-off';
     $('bannerTitle').textContent='Disconnected.';
-    $('bannerMsg').textContent=mock
-      ? 'The local server stopped answering — restart web\\mock_server.ps1 (or .py) and reload.'
-      : 'ESP32 at '+state.prefs.host+':'+state.prefs.port+' not reachable. It may have fallen back to access point FoodMonitor‑XXXX (192.168.4.1), or the container is out of range. Check Settings → Data source, or switch to Mock server.';
+    if(mock&&!isLocalHost()){
+      $('bannerMsg').textContent='This hosted preview has no local server to read. Turn on “Preview demo data” for a fake readout, or sign in and choose Follow the cloud.';
+    }else if(mock){
+      $('bannerMsg').textContent='The local server stopped answering — restart web\\mock_server.ps1 (or .py) and reload.';
+    }else{
+      $('bannerMsg').textContent='ESP32 at '+state.prefs.host+':'+state.prefs.port+' not reachable. It may have fallen back to access point FoodMonitor‑XXXX (192.168.4.1), or the container is out of range. Check Settings → Data source, or switch to Mock server.';
+    }
     $('connChip').className='conn is-off';
     $('connText').textContent='Disconnected';
   }
 }
 function pollHTTP(){
+  if(isFollowing()){ return; }          /* the snapshot listener drives the UI */
   if(state.demo){
     applyData(genDemo());
     return;
@@ -805,11 +833,12 @@ function applyData(d){
   $('sparkMin').textContent=fmt(Math.min.apply(null,state.samples));
   $('sparkMax').textContent=fmt(Math.max.apply(null,state.samples));
 
-  if(changed||state.entries.length===0){
+  if(state.prefs.sync!=='follow'&&(changed||state.entries.length===0)){
     state.entries.unshift({t:d.t||logTime(),status:d.status,avg:d.avg});
     if(state.entries.length>60){state.entries.pop();}
     renderLog();
   }
+  cloudMaybePublish(d);
 }
 
 /* ------------------------------------------------------------------ chart -- */
@@ -1045,6 +1074,157 @@ function bleConnect(){
     });
 }
 
+/* ----------------------------------------------------------------- cloud --- */
+/* Optional Firebase sync. firebase.js is imported on demand (below), so the
+   ESP32's offline page — which has no firebase.js and no internet — never loads
+   any of this and behaves exactly as before. */
+var CLOUD_MS=10000;         /* min gap between published snapshots (writes/day) */
+var CLOUD_STALE_MS=30000;   /* publisher considered gone after this */
+function isLocalHost(){
+  var h=window.location.hostname;
+  return h===''||h==='localhost'||h==='127.0.0.1'||h==='::1'||h==='[::1]';
+}
+function isFollowing(){
+  return state.prefs.sync==='follow'&&!!state.cloud.user&&!!state.cloud.mod;
+}
+function msOf(v){
+  if(!v){return 0;}
+  if(typeof v==='number'){return v;}
+  if(typeof v.toMillis==='function'){return v.toMillis();}
+  if(typeof v.seconds==='number'){return v.seconds*1000;}
+  return 0;
+}
+function setAcct(t,bad){var m=$('acctMsg');if(!m){return;}m.textContent=t||'';m.className='msg'+(bad?' bad':'');}
+var cloudPromise=null;
+function loadCloud(){
+  if(cloudPromise){return cloudPromise;}
+  cloudPromise=import('./firebase.js').then(function(mod){
+    state.cloud.mod=mod;
+    mod.onUser(function(u){onCloudUser(u);});
+    return mod;
+  }).catch(function(){
+    cloudPromise=null;
+    throw new Error('Cloud is unavailable here — offline, or the ESP32 page.');
+  });
+  return cloudPromise;
+}
+function onCloudUser(u){
+  state.cloud.user=u||null;
+  applyCloud();
+}
+function updateAccountUI(){
+  var out=$('acctOut');if(!out){return;}
+  var u=state.cloud.user;
+  if(u){
+    out.textContent='Signed in as '+(u.email||u.displayName||u.uid)+' — every device on this account shares one set of readings.';
+    $('signInBtn').hidden=true;$('signOutBtn').hidden=false;
+  }else{
+    out.textContent='Not signed in — sign in with the household Google account to share readings.';
+    $('signInBtn').hidden=false;$('signOutBtn').hidden=true;
+  }
+}
+function updateCloudFoot(){
+  var el=$('footCloud');if(!el){return;}
+  var s=state.prefs.sync,u=state.cloud.user;
+  if(s==='off'){el.hidden=true;el.textContent='';return;}
+  el.textContent='Cloud · '+(s==='publish'?'publishing':s==='follow'?'following':'off')+
+    (u&&u.email?' · '+u.email:' · not signed in');
+  el.hidden=false;
+}
+function ensureLocal(){
+  if(state.prefs.source==='ble'){return;}
+  if(!pollTimer){startPolling();}
+  if(!state.demo){pollHTTP();}
+}
+function applyCloud(){
+  var c=state.cloud;
+  if(c.unsub){c.unsub();c.unsub=null;}
+  if(c.watch){clearInterval(c.watch);c.watch=0;}
+  if(isFollowing()){startFollow();}
+  else{ensureLocal();}
+  updateAccountUI();updateCloudFoot();
+  if(state.prefs.sync!=='off'&&!c.user){setAcct('Sign in to turn on cloud sync.',false);}
+}
+function startFollow(){
+  var c=state.cloud;
+  if(!c.mod||!c.user){return;}
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  c.lastMs=0;
+  $('connChip').className='conn is-wait';
+  $('connText').textContent='Cloud — connecting…';
+  c.unsub=c.mod.follow(c.user.uid,function(d){
+    if(!d){cloudWait();return;}
+    onCloudData(d);
+  },function(){setAcct('Cloud read failed — check the Firestore rules.',true);});
+  c.watch=setInterval(function(){
+    if(!isFollowing()){return;}
+    var age=c.lastMs?Date.now()-c.lastMs:Infinity;
+    if(age>CLOUD_STALE_MS&&!document.body.classList.contains('stale')){
+      state.online=false;
+      document.body.classList.add('stale');
+      showCloudBanner();
+    }
+  },5000);
+  cloudLoadHistory();
+}
+function cloudWait(){
+  document.body.classList.remove('stale');
+  var b=$('banner');b.hidden=false;b.className='banner';
+  $('bannerTitle').textContent='Waiting for the publisher…';
+  $('bannerMsg').textContent='Signed in, but nothing has been published yet. Turn on “Publish this device” on the phone or browser that is on the ESP32’s Wi‑Fi.';
+  $('connChip').className='conn is-wait';
+  $('connText').textContent='Cloud — waiting';
+}
+function showCloudBanner(){
+  var b=$('banner');b.hidden=false;b.className='banner is-off';
+  $('bannerTitle').textContent='Cloud data is stale.';
+  $('bannerMsg').textContent='No update for a while — is a device on the home Wi‑Fi still publishing?';
+  $('connChip').className='conn is-off';
+  $('connText').textContent='Cloud — stale';
+}
+function onCloudData(d){
+  var c=state.cloud;
+  var ms=msOf(d.updatedAt);
+  if(ms){c.lastMs=ms;}
+  var fresh=(c.lastMs&&Date.now()-c.lastMs<CLOUD_STALE_MS);
+  var prev=state.status;
+  if(fresh){
+    state.fails=0;state.online=true;
+    document.body.classList.remove('stale');
+    $('banner').hidden=true;
+    $('connChip').className='conn is-ok';
+    $('connText').textContent='Cloud · '+(d.mode||'ESP32');
+  }else{
+    state.online=false;
+    document.body.classList.add('stale');
+    showCloudBanner();
+  }
+  applyData(d);
+  if(d.status!==prev){cloudLoadHistory();}
+}
+function cloudLoadHistory(){
+  var c=state.cloud;
+  if(!isFollowing()){return;}
+  c.mod.recentReadings(c.user.uid,30).then(function(rows){
+    if(!isFollowing()){return;}
+    state.entries=rows.map(function(r){return {t:r.t||'',status:r.status,avg:r.avg};});
+    renderLog();
+  }).catch(function(){});
+}
+function cloudMaybePublish(d){
+  var c=state.cloud;
+  if(state.prefs.sync!=='publish'||!c.user||!c.mod||state.demo){return;}
+  var now=Date.now();
+  var changed=(d.status!==c.lastStatus);
+  if(!changed&&now-c.lastPub<CLOUD_MS){return;}
+  c.lastPub=now;
+  var first=(c.lastStatus===null);
+  c.lastStatus=d.status;
+  c.mod.publish(c.user.uid,d).then(function(){
+    if(changed||first){c.mod.addReading(c.user.uid,{t:d.t||logTime(),status:d.status,avg:d.avg});}
+  }).catch(function(){});
+}
+
 /* ------------------------------------------------------------------- wire -- */
 $('saveBtn').addEventListener('click',saveCfg);
 $('revertBtn').addEventListener('click',function(){
@@ -1098,6 +1278,7 @@ function readSettingsForm(){
     font:getSeg('segFont')||'grotesk',
     source:getSeg('segSource')||'mock',
     transport:getSeg('segTransport')||'proxy',
+    sync:getSeg('segSync')||'off',
     host:($('inHost').value||'').trim()||PREF_DEFAULTS.host,
     port:clamp(parseInt($('inPort').value,10)||80,1,65535),
     pollMs:parseInt(getSeg('segPoll')||'2000',10)
@@ -1123,6 +1304,12 @@ function refreshSettingsHints(){
   $('trHint').textContent=(p.transport==='proxy')
     ? 'Requests go through this server (/proxy/data → ESP32). No CORS needed — use this when the page is served by the local server.'
     : 'The browser talks straight to http://'+p.host+'/data. Needs firmware with CORS (1.4.0+) and a reachable IP; file:// pages cannot use this route.';
+  var sy=p.sync||'off';
+  $('syncHint').textContent=(sy==='publish')
+    ? 'Publish: this device keeps reading locally and mirrors each snapshot to your account, so other phones can follow it. Keep it on the ESP32’s Wi‑Fi.'
+    : (sy==='follow'
+      ? 'Follow: this device shows whatever the publishing device is reading — open this page anywhere. Needs sign‑in.'
+      : 'Off — everything stays in this browser.');
   if(p.source==='ble'){
     var ok=bleSupported();
     $('bleHint').textContent=ok
@@ -1143,6 +1330,7 @@ function syncSettingsForm(){
   setSeg('segFont',state.prefs.font);
   setSeg('segSource',state.prefs.source);
   setSeg('segTransport',state.prefs.transport);
+  setSeg('segSync',state.prefs.sync);
   setSeg('segPoll',state.prefs.pollMs);
   $('inHost').value=state.prefs.host;
   $('inPort').value=state.prefs.port;
@@ -1187,6 +1375,12 @@ function saveSettings(){
   applyTheme();applyFont();applyMode();startPolling();syncSettingsForm();
   if(changed){resetStream();}
   if(p.source==='ble'&&!state.bleOK){bleConnect();}
+  if(p.sync!=='off'){
+    loadCloud().catch(function(){
+      setAcct('Cloud is unavailable here — check your connection.',true);
+    });
+  }
+  applyCloud();
   setMsg('Saved — '+(p.source==='ble'?'Bluetooth':p.source)+' source'
     +(p.source==='ble'?'':', polling every '+fmt(p.pollMs)+' ms')+'.',false);
 }
@@ -1198,15 +1392,30 @@ function persistServerSettings(){
     body:JSON.stringify({host:state.prefs.host,port:state.prefs.port}),
     signal:AbortSignal.timeout(4000)}).catch(function(){});
 }
-['segMode','segTheme','segFont','segSource','segTransport','segPoll'].forEach(function(id){
+['segMode','segTheme','segFont','segSource','segTransport','segSync','segPoll'].forEach(function(id){
   $(id).addEventListener('click',function(ev){
     var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
     setSeg(id,b.dataset.v);
-    if(id==='segSource'||id==='segTransport'){refreshSettingsHints();}
+    if(id==='segSource'||id==='segTransport'||id==='segSync'){refreshSettingsHints();}
     if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();}
     if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();}
     if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();}
   });
+});
+$('signInBtn').addEventListener('click',function(){
+  setAcct('Opening Google sign-in…',false);
+  loadCloud().then(function(mod){return mod.signIn();})
+    .then(function(){setAcct('Signed in.',false);})
+    .catch(function(e){
+      var code=(e&&e.code)?e.code:'';
+      if(code==='auth/popup-closed-by-user'||code==='auth/cancelled-popup-request'){setAcct('Sign-in cancelled.',false);}
+      else if(code==='auth/unauthorized-domain'){setAcct('This domain is not authorised in Firebase Authentication.',true);}
+      else if(code==='auth/operation-not-allowed'){setAcct('Enable the Google provider in Firebase Authentication.',true);}
+      else{setAcct((e&&e.message)?e.message:'Sign-in failed.',true);}
+    });
+});
+$('signOutBtn').addEventListener('click',function(){
+  if(state.cloud.mod){state.cloud.mod.signOutNow().catch(function(){});}
 });
 $('setBtn').addEventListener('click',openSettings);
 $('blePairBtn').addEventListener('click',bleConnect);
@@ -1259,6 +1468,9 @@ applyFont();
 applyMode();
 startPolling();
 pollHTTP();
+updateAccountUI();
+updateCloudFoot();
+if(state.prefs.sync!=='off'){loadCloud().catch(function(){});}
 initFromServer();
 setTimeout(function(){if(!state.online&&state.fails<3){pollHTTP();}},600);
 </script>
