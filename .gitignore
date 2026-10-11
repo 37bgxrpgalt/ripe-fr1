@@ -1,0 +1,18 @@
+# ── secrets — NEVER commit ────────────────────────────────────────────────
+# Wi-Fi credentials live here; only config.example.h is tracked.
+esp32/food_spoilage_monitor/config.h
+
+# ── local server state (persisted address) ────────────────────────────────
+web/settings.json
+
+# ── build output / IDE / OS cruft ─────────────────────────────────────────
+build/
+.gradle/
+local.properties
+.idea/
+*.iml
+*.apk
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
