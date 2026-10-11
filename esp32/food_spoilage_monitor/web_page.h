@@ -1105,7 +1105,7 @@ function setAcct(t,bad){var m=$('acctMsg');if(!m){return;}m.textContent=t||'';m.
 var cloudPromise=null;
 function loadCloud(){
   if(cloudPromise){return cloudPromise;}
-  cloudPromise=import('./firebase.js').then(function(mod){
+  cloudPromise=import('./firebase.js?v=2').then(function(mod){
     state.cloud.mod=mod;
     mod.onUser(function(u){onCloudUser(u);});
     return mod;
@@ -1159,7 +1159,7 @@ function applyCloud(){
 }
 function startFollow(){
   var c=state.cloud;
-  if(!c.mod||!c.user){return;}
+  if(!c.mod||!c.user||typeof c.mod.follow!=='function'){return;}
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   c.lastMs=0;
   $('connChip').className='conn is-wait';
@@ -1216,7 +1216,7 @@ function onCloudData(d){
 }
 function cloudLoadHistory(){
   var c=state.cloud;
-  if(!isFollowing()){return;}
+  if(!isFollowing()||typeof c.mod.recentReadings!=='function'){return;}
   c.mod.recentReadings(c.user.uid,30).then(function(rows){
     if(!isFollowing()){return;}
     state.entries=rows.map(function(r){return {t:r.t||'',status:r.status,avg:r.avg};});
@@ -1226,6 +1226,7 @@ function cloudLoadHistory(){
 function cloudMaybePublish(d){
   var c=state.cloud;
   if(state.prefs.sync!=='publish'||!c.user||!c.mod||state.demo){return;}
+  if(typeof c.mod.publish!=='function'){return;}
   var now=Date.now();
   var changed=(d.status!==c.lastStatus);
   if(!changed&&now-c.lastPub<CLOUD_MS){return;}
@@ -1251,7 +1252,7 @@ function syncedPrefs(){
   return o;
 }
 function pushPrefsNow(){
-  if(!cloudReady()){return;}
+  if(!cloudReady()||typeof state.cloud.mod.pushPrefs!=='function'){return;}
   state.cloud.mod.pushPrefs(state.cloud.user.uid,syncedPrefs()).catch(function(){});
 }
 function applyRemotePrefs(p){
@@ -1272,7 +1273,7 @@ function applyRemotePrefs(p){
 function startPrefsSync(){
   var c=state.cloud;
   if(c.unsubPrefs){c.unsubPrefs();c.unsubPrefs=null;}
-  if(!cloudReady()){return;}
+  if(!cloudReady()||typeof c.mod.watchPrefs!=='function'){return;}
   c.unsubPrefs=c.mod.watchPrefs(c.user.uid,function(p){
     if(!p){                                  /* nothing stored yet → seed it */
       c.mod.pushPrefs(c.user.uid,syncedPrefs()).catch(function(){});
