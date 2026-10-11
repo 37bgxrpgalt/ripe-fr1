@@ -24,7 +24,7 @@ dark mode, Basic / Advanced view) and adds:
 ## Download & install (no build needed)
 
 1. Open the repo's **Releases** page (right‑hand sidebar of the GitHub repo) and
-   download **`app-debug.apk`**.
+   download the latest **APK** asset (for v1.0.0: **`RipeFR1-v1.0.0.apk`**).
 2. On the phone, allow *Install unknown apps* for whichever app you use to open
    the file (browser / Files).
 3. Tap the APK to install. Debug APKs are self‑signed, so Android may warn about
