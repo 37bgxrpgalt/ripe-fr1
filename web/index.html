@@ -740,6 +740,13 @@ function onFail(){
   document.body.classList.add('stale');
   state.online=false;
   var mock=state.prefs.source==='mock';
+  /* A hosted page (e.g. GitHub Pages) has no local server to read: don't poll
+     /data forever — stop after the first miss and show the guidance instead.
+     On the ESP32's own page the first poll succeeds, so this never triggers. */
+  if(mock&&!isLocalHost()&&!state.demo){
+    state.fails=3;
+    if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
+  }
   var b=$('banner');
   b.hidden=false;
   if(state.fails<3){
@@ -1250,6 +1257,7 @@ $('demoBtn').addEventListener('click',function(){
     $('banner').hidden=true;
     $('connChip').className='conn is-ok';
     $('connText').textContent='Demo · preview';
+    startPolling();                         /* keep the demo animating */
   }
   pollHTTP();
 });
@@ -1465,7 +1473,7 @@ pollHTTP();
 updateAccountUI();
 updateCloudFoot();
 if(state.prefs.sync!=='off'){loadCloud().catch(function(){});}
-initFromServer();
+if(isLocalHost()){initFromServer();}   /* only the local server has /server-info */
 setTimeout(function(){if(!state.online&&state.fails<3){pollHTTP();}},600);
 </script>
 </body>
