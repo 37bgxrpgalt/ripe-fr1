@@ -21,11 +21,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -47,13 +51,18 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -62,12 +71,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.random.Random
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Mirrors the web dashboard palette — warm gray + #edb100 accent. */
@@ -137,14 +149,114 @@ val DarkPalette = RipePalette(
     chartLine = Color(0xFFC9C2B3)
 )
 
-/** Resolve the active palette from the Settings theme (Light / Dark / System). */
-@Composable
-fun activePalette(theme: String): RipePalette =
-    when (theme) {
-        "Dark" -> DarkPalette
-        "Light" -> LightPalette
-        else -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
+/** Parse a CSS colour string (#rgb, #rrggbb, #rrggbbaa, or rgb()/rgba()). The
+ *  web stores colours as CSS strings, so both platforms share one palette. */
+fun parseCssColor(s: String?, fallback: Color): Color {
+    val t = s?.trim().orEmpty()
+    if (t.isEmpty()) return fallback
+    try {
+        if (t.startsWith("#")) {
+            val hex = t.substring(1)
+            return when (hex.length) {
+                3 -> Color(
+                    hex[0].digitToInt(16) * 17,
+                    hex[1].digitToInt(16) * 17,
+                    hex[2].digitToInt(16) * 17
+                )
+                6 -> Color(("ff$hex").toLong(16))
+                8 -> Color(
+                    hex.substring(0, 2).toInt(16), hex.substring(2, 4).toInt(16),
+                    hex.substring(4, 6).toInt(16), hex.substring(6, 8).toInt(16)
+                )
+                else -> fallback
+            }
+        }
+        val m = Regex("rgba?\\(\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*,\\s*([0-9.]+)\\s*(?:,\\s*([0-9.]+))?\\s*\\)")
+            .find(t) ?: return fallback
+        val r = m.groupValues[1].toFloatOrNull()?.coerceIn(0f, 255f) ?: return fallback
+        val g = m.groupValues[2].toFloatOrNull()?.coerceIn(0f, 255f) ?: return fallback
+        val b = m.groupValues[3].toFloatOrNull()?.coerceIn(0f, 255f) ?: return fallback
+        val a = m.groupValues[4].takeIf { it.isNotEmpty() }?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 1f
+        return Color(r / 255f, g / 255f, b / 255f, a)
+    } catch (_: Exception) {
+        return fallback
     }
+}
+
+/** The colour tokens the app can customise, keyed by the web's CSS variable
+ *  names so a palette set on one platform renders on the other. */
+val COLOR_TOKENS: List<Pair<String, String>> = listOf(
+    "bg" to "Page background", "panel" to "Panel", "panel-hi" to "Panel highlight",
+    "sunken" to "Sunken / track", "ink" to "Text", "ink-2" to "Text secondary",
+    "muted" to "Muted text", "accent" to "Accent", "accent-deep" to "Accent (deep)",
+    "fresh" to "Fresh", "spoiled" to "Spoiled", "tint-fresh" to "Fresh tint",
+    "tint-warn" to "Warning tint", "tint-bad" to "Spoiled tint",
+    "display-bg" to "Display background", "dark-ink" to "Display text",
+    "dark-muted" to "Display muted", "dark-track" to "Display track"
+)
+
+/** The "Ripe" (light) defaults — used whenever a custom palette omits a token. */
+val RipeDefaultColors: Map<String, String> = mapOf(
+    "bg" to "#e8e4db", "panel" to "#f5f2eb", "panel-hi" to "#fcfbf7",
+    "sunken" to "#ddd7ca", "ink" to "#23211d", "ink-2" to "#4b4740",
+    "muted" to "#837c6f", "accent" to "#edb100", "accent-deep" to "#8a6400",
+    "fresh" to "#4c7a4d", "spoiled" to "#b23a25", "tint-fresh" to "#e6ece1",
+    "tint-warn" to "#f7ecd2", "tint-bad" to "#f1ded7", "display-bg" to "#23211d",
+    "dark-ink" to "#f2eee5", "dark-muted" to "#9a948a", "dark-track" to "#3a362f"
+)
+
+/** The colour presets offered in Settings → Colours (mirrors the web). */
+val COLOR_PRESETS: Map<String, Map<String, String>> = mapOf(
+    "Ripe" to emptyMap(),
+    "Midnight" to mapOf(
+        "bg" to "#14161a", "panel" to "#1b1e24", "panel-hi" to "#232830", "sunken" to "#2b313a",
+        "ink" to "#eef1f6", "ink-2" to "#c3cad6", "muted" to "#8b94a3", "accent" to "#ffc24d",
+        "accent-deep" to "#c9902a", "fresh" to "#7bd18b", "spoiled" to "#ff7a6b",
+        "tint-fresh" to "#1b2a20", "tint-warn" to "#2c2718", "tint-bad" to "#2e1c1a",
+        "display-bg" to "#0f1115", "dark-ink" to "#eef1f6", "dark-muted" to "#9aa3b2",
+        "dark-track" to "#2a303a"
+    ),
+    "Paper" to mapOf(
+        "bg" to "#f2efe6", "panel" to "#faf8f2", "panel-hi" to "#ffffff", "sunken" to "#e6e1d5",
+        "ink" to "#2a2823", "ink-2" to "#55514a", "muted" to "#8c867a", "accent" to "#c8892b",
+        "accent-deep" to "#8a5e14", "fresh" to "#4c7a4d", "spoiled" to "#b23a25",
+        "tint-fresh" to "#e9eee4", "tint-warn" to "#f6efdf", "tint-bad" to "#f2e1da",
+        "display-bg" to "#2a2823", "dark-ink" to "#f2eee5", "dark-muted" to "#9a948a",
+        "dark-track" to "#3a362f"
+    ),
+    "Contrast" to mapOf(
+        "bg" to "#000000", "panel" to "#0b0b0b", "panel-hi" to "#161616", "sunken" to "#242424",
+        "ink" to "#ffffff", "ink-2" to "#f0f0f0", "muted" to "#b9b9b9", "accent" to "#ffe000",
+        "accent-deep" to "#ffe000", "fresh" to "#00ff66", "spoiled" to "#ff3b30",
+        "tint-fresh" to "#00331a", "tint-warn" to "#332b00", "tint-bad" to "#330d0a",
+        "display-bg" to "#000000", "dark-ink" to "#ffffff", "dark-muted" to "#c9c9c9",
+        "dark-track" to "#3a3a3a"
+    )
+)
+
+/** Build a palette from a colour map, falling back to the Ripe defaults. */
+fun customPalette(colors: Map<String, String>): RipePalette {
+    fun c(key: String) = parseCssColor(colors[key], parseCssColor(RipeDefaultColors[key], Color.Gray))
+    return RipePalette(
+        bg = c("bg"), panel = c("panel"), panelHi = c("panel-hi"), sunken = c("sunken"),
+        ink = c("ink"), ink2 = c("ink-2"), muted = c("muted"),
+        fresh = c("fresh"), spoiled = c("spoiled"), warn = c("accent"),
+        accentDeep = c("accent-deep"), tintFresh = c("tint-fresh"),
+        tintWarn = c("tint-warn"), tintBad = c("tint-bad"),
+        track = c("dark-track"), displayBg = c("display-bg"),
+        displayInk = c("dark-ink"), displayMuted = c("dark-muted"),
+        chartLine = c("ink-2")
+    )
+}
+
+/** Resolve the active palette from the Settings theme (Light / Dark / System / Custom). */
+@Composable
+fun activePalette(settings: RipeSettings): RipePalette = when (settings.theme) {
+    "Dark" -> DarkPalette
+    "Light" -> LightPalette
+    "Custom" -> customPalette(settings.colors)
+    else -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
+}
 
 // Bundled fonts (res/font) — no Google Play Services / downloadable fonts
 // needed, so they work offline on any device or emulator image. Two pairings
@@ -181,6 +293,9 @@ val LocalUiFont = compositionLocalOf { Urbanist }
 
 data class LogEntry(val time: String, val status: String, val rawValue: Int)
 
+/** One panel placed on the Custom dashboard board (mirrors the web's layout). */
+data class BoardItem(val id: String, val x: Int, val y: Int, val w: Int, val h: Int)
+
 /** App-level settings, mirrors the web dashboard's Settings sheet. */
 data class RipeSettings(
     val theme: String = "Light",
@@ -192,7 +307,17 @@ data class RipeSettings(
     val routing: String = "Via local server",
     val pollingMs: Long = 2000L,
     /** "Off" / "Publish this device" / "Follow the cloud" — mirrors the web. */
-    val sync: String = "Off"
+    val sync: String = "Off",
+    /** v1.1.0 — look & feel shared with the account. */
+    val name: String = "",
+    val anim: String = "On",
+    val fHead: String = "",
+    val fBody: String = "",
+    val colors: Map<String, String> = emptyMap(),
+    val layout: List<BoardItem> = emptyList(),
+    /** Local-only: has the default board been seeded, and has the user entered. */
+    val layoutReady: Boolean = false,
+    val entered: Boolean = false
 )
 
 /** Direct GET of a JSON payload (ESP32 /data, or local server /proxy/data). */
@@ -273,6 +398,14 @@ suspend fun postJson(urlString: String, body: String): String = withContext(Disp
 /** Persist the settings so they survive app restarts (SharedPreferences — no
  *  extra dependencies; DataStore can replace this later if preferred). */
 private fun saveSettings(context: Context, s: RipeSettings) {
+    val colorsJson = JSONObject()
+    s.colors.forEach { (k, v) -> colorsJson.put(k, v) }
+    val layoutJson = JSONArray()
+    s.layout.forEach { b ->
+        layoutJson.put(
+            JSONObject().put("id", b.id).put("x", b.x).put("y", b.y).put("w", b.w).put("h", b.h)
+        )
+    }
     context.getSharedPreferences("food_monitor_settings", Context.MODE_PRIVATE).edit()
         .putString("theme", s.theme)
         .putString("font", s.font)
@@ -283,11 +416,37 @@ private fun saveSettings(context: Context, s: RipeSettings) {
         .putString("routing", s.routing)
         .putLong("polling_ms", s.pollingMs)
         .putString("sync", s.sync)
+        .putString("name", s.name)
+        .putString("anim", s.anim)
+        .putString("fHead", s.fHead)
+        .putString("fBody", s.fBody)
+        .putString("colors", colorsJson.toString())
+        .putString("layout", layoutJson.toString())
+        .putBoolean("layout_ready", s.layoutReady)
+        .putBoolean("entered", s.entered)
         .apply()
 }
 
 private fun loadSettings(context: Context): RipeSettings {
     val prefs = context.getSharedPreferences("food_monitor_settings", Context.MODE_PRIVATE)
+    val colors = LinkedHashMap<String, String>()
+    try {
+        val o = JSONObject(prefs.getString("colors", "{}") ?: "{}")
+        o.keys().forEach { k -> colors[k] = o.optString(k, "") }
+    } catch (_: Exception) { }
+    val layout = ArrayList<BoardItem>()
+    try {
+        val a = JSONArray(prefs.getString("layout", "[]") ?: "[]")
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            layout.add(
+                BoardItem(
+                    o.getString("id"), o.optInt("x"), o.optInt("y"),
+                    o.optInt("w", 2), o.optInt("h", 1)
+                )
+            )
+        }
+    } catch (_: Exception) { }
     return RipeSettings(
         theme = prefs.getString("theme", null) ?: "Light",
         font = prefs.getString("font", null) ?: "Grotesk",
@@ -297,7 +456,15 @@ private fun loadSettings(context: Context): RipeSettings {
         port = prefs.getString("port", null) ?: "8012",
         routing = prefs.getString("routing", null) ?: "Via local server",
         pollingMs = prefs.getLong("polling_ms", 2000L),
-        sync = prefs.getString("sync", null) ?: "Off"
+        sync = prefs.getString("sync", null) ?: "Off",
+        name = prefs.getString("name", null) ?: "",
+        anim = prefs.getString("anim", null) ?: "On",
+        fHead = prefs.getString("fHead", null) ?: "",
+        fBody = prefs.getString("fBody", null) ?: "",
+        colors = colors,
+        layout = layout,
+        layoutReady = prefs.getBoolean("layout_ready", false),
+        entered = prefs.getBoolean("entered", false)
     )
 }
 
@@ -505,7 +672,9 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(initialSettings) }
     var showSettings by remember { mutableStateOf(false) }
-    val p = activePalette(settings.theme)
+    // GitHub-style start page — the first thing shown whenever nobody is signed in.
+    var showAuth by remember { mutableStateOf(RipeCloud.currentUser == null) }
+    val p = activePalette(settings)
     val editorial = settings.font == "Editorial"
 
     // --- Cloud account + sync (mirrors web Settings → Account / Cloud sync) --
@@ -526,9 +695,40 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
         onDispose { RipeCloud.unwatchAuth(listener) }
     }
 
+    // Once a user is present, leave the start page.
+    LaunchedEffect(cloudUid) { if (cloudUid != null) showAuth = false }
+
     // Google sign-in runs through Credential Manager; its bottom sheet is the
     // account chooser, and the API is suspending, so it needs a coroutine scope.
     val scope = rememberCoroutineScope()
+
+    // --- Custom fonts: download the named Google Fonts at runtime -----------
+    var customDisplay by remember { mutableStateOf<FontFamily?>(null) }
+    var customUi by remember { mutableStateOf<FontFamily?>(null) }
+    LaunchedEffect(settings.font, settings.fHead, settings.fBody) {
+        if (settings.font == "Custom") {
+            val head = settings.fHead.ifBlank { "Inter" }
+            val body = settings.fBody.ifBlank { head }
+            val d = loadGoogleFont(context, head)
+            val b = loadGoogleFont(context, body)
+            customDisplay = d
+            customUi = b ?: d
+        } else {
+            customDisplay = null
+            customUi = null
+        }
+    }
+    val displayFamily = customDisplay ?: if (editorial) Merriweather else SpaceGrotesk
+    val uiFamily = customUi ?: if (editorial) PtSans else Urbanist
+
+    // Seed the default board the first time Custom mode is opened.
+    LaunchedEffect(settings.mode, settings.layoutReady) {
+        if (settings.mode == "Custom" && !settings.layoutReady) {
+            val seeded = settings.copy(layout = defaultBoardLayout(), layoutReady = true)
+            settings = seeded
+            saveSettings(context, seeded)
+        }
+    }
 
     // Settings follow the account: read them live, seed the doc once, and write
     // on every local change — exactly like the web dashboard.
@@ -541,13 +741,19 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
                 uid,
                 onData = { cp ->
                     if (cp == null) {
-                        RipeCloud.pushPrefs(uid, settings.theme, settings.font, settings.mode, settings.pollingMs)
+                        RipeCloud.pushPrefs(uid, settings)
                     } else {
                         val merged = settings.copy(
                             theme = cp.theme?.takeIf { it.isNotEmpty() } ?: settings.theme,
                             font = cp.font?.takeIf { it.isNotEmpty() } ?: settings.font,
                             mode = cp.mode?.takeIf { it.isNotEmpty() } ?: settings.mode,
-                            pollingMs = cp.pollingMs ?: settings.pollingMs
+                            pollingMs = cp.pollingMs ?: settings.pollingMs,
+                            name = cp.name ?: settings.name,
+                            anim = cp.anim?.takeIf { it.isNotEmpty() } ?: settings.anim,
+                            fHead = cp.fHead ?: settings.fHead,
+                            fBody = cp.fBody ?: settings.fBody,
+                            colors = if (cp.colors.isNotEmpty()) cp.colors else settings.colors,
+                            layout = if (cp.layout.isNotEmpty()) cp.layout else settings.layout
                         )
                         if (merged != settings) {
                             settings = merged
@@ -581,70 +787,489 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
         if (uid != null && settings.sync == "Publish this device") RipeCloud.publish(uid, r)
     }
 
+    val doSignIn: (String, String) -> Unit = { email, pass ->
+        cloudBusy = true; cloudMsg = "Signing in…"; cloudMsgBad = false
+        RipeCloud.signIn(email, pass) { err ->
+            cloudBusy = false
+            cloudMsg = err ?: "Signed in."
+            cloudMsgBad = err != null
+        }
+    }
+    val doCreate: (String, String) -> Unit = { email, pass ->
+        cloudBusy = true; cloudMsg = "Creating account…"; cloudMsgBad = false
+        RipeCloud.createAccount(email, pass) { err ->
+            cloudBusy = false
+            cloudMsg = err ?: "Account created — you are signed in."
+            cloudMsgBad = err != null
+        }
+    }
+    val doGoogle: () -> Unit = {
+        cloudBusy = true; cloudMsg = "Opening Google…"; cloudMsgBad = false
+        scope.launch {
+            RipeCloud.googleSignIn(context) { err ->
+                cloudBusy = false
+                cloudMsg = err ?: "Signed in."
+                cloudMsgBad = err != null
+            }
+        }
+    }
+    val doSignOut: () -> Unit = {
+        scope.launch { RipeCloud.googleSignOut(context) }
+        RipeCloud.signOutNow()
+        cloudMsg = "Signed out."; cloudMsgBad = false
+        showAuth = true
+    }
+
     CompositionLocalProvider(
-        LocalDisplayFont provides if (editorial) Merriweather else SpaceGrotesk,
-        LocalUiFont provides if (editorial) PtSans else Urbanist
+        LocalDisplayFont provides displayFamily,
+        LocalUiFont provides uiFamily
     ) {
         Box(modifier = Modifier.fillMaxSize().background(p.bg)) {
-            FoodMonitorDashboard(
-                settings = settings,
-                cloudEmail = cloudEmail,
-                cloudLogs = cloudLogs,
-                follow = follow,
-                followedReading = followedReading,
-                onPublish = onPublish,
-                onOpenSettings = { showSettings = true }
-            )
-
-            if (showSettings) {
-                SettingsDialog(
-                    settings = settings,
+            if (showAuth) {
+                RipeStartPage(
+                    p = p,
                     cloudEmail = cloudEmail,
                     cloudBusy = cloudBusy,
                     cloudMsg = cloudMsg,
                     cloudMsgBad = cloudMsgBad,
-                    onApply = { updated ->
+                    onSignIn = doSignIn,
+                    onCreate = doCreate,
+                    onGoogle = doGoogle,
+                    onGuest = { showAuth = false },
+                    onContinue = { showAuth = false },
+                    onSignOut = doSignOut
+                )
+            } else {
+                FoodMonitorDashboard(
+                    settings = settings,
+                    cloudEmail = cloudEmail,
+                    cloudLogs = cloudLogs,
+                    follow = follow,
+                    followedReading = followedReading,
+                    onPublish = onPublish,
+                    onOpenSettings = { showSettings = true },
+                    onOpenAuth = { showAuth = true },
+                    onLayoutChange = { newLayout ->
+                        val updated = settings.copy(layout = newLayout, layoutReady = true)
                         settings = updated
                         saveSettings(context, updated)
-                        val uid = cloudUid
-                        if (uid != null) {
-                            RipeCloud.pushPrefs(uid, updated.theme, updated.font, updated.mode, updated.pollingMs)
-                        }
-                        showSettings = false
-                    },
-                    onCloudSignIn = { email, pass ->
-                        cloudBusy = true; cloudMsg = "Signing in…"; cloudMsgBad = false
-                        RipeCloud.signIn(email, pass) { err ->
-                            cloudBusy = false
-                            cloudMsg = err ?: "Signed in."
-                            cloudMsgBad = err != null
-                        }
-                    },
-                    onCloudCreate = { email, pass ->
-                        cloudBusy = true; cloudMsg = "Creating account…"; cloudMsgBad = false
-                        RipeCloud.createAccount(email, pass) { err ->
-                            cloudBusy = false
-                            cloudMsg = err ?: "Account created — you are signed in."
-                            cloudMsgBad = err != null
-                        }
-                    },
-                    onCloudGoogle = {
-                        cloudBusy = true; cloudMsg = "Opening Google…"; cloudMsgBad = false
-                        scope.launch {
-                            RipeCloud.googleSignIn(context) { err ->
-                                cloudBusy = false
-                                cloudMsg = err ?: "Signed in."
-                                cloudMsgBad = err != null
+                        cloudUid?.let { RipeCloud.pushPrefs(it, updated) }
+                    }
+                )
+
+                if (showSettings) {
+                    SettingsDialog(
+                        settings = settings,
+                        cloudEmail = cloudEmail,
+                        cloudBusy = cloudBusy,
+                        cloudMsg = cloudMsg,
+                        cloudMsgBad = cloudMsgBad,
+                        onApply = { updated ->
+                            settings = updated
+                            saveSettings(context, updated)
+                            val uid = cloudUid
+                            if (uid != null) {
+                                RipeCloud.pushPrefs(uid, updated)
+                            }
+                            showSettings = false
+                        },
+                        onCloudSignOut = doSignOut,
+                        onOpenAuth = { showSettings = false; showAuth = true },
+                        onClose = { showSettings = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Downloads a Google Fonts family at runtime (no bundled list) and caches the
+ * TTF under cacheDir. The legacy CSS endpoint is used because a legacy
+ * User-Agent makes Google serve a plain TTF url(). Returns null on any failure
+ * so the caller falls back to the bundled Grotesk pairing.
+ */
+@OptIn(ExperimentalTextApi::class)
+suspend fun loadGoogleFont(context: Context, family: String): FontFamily? = withContext(Dispatchers.IO) {
+    try {
+        val name = family.trim().replace(" ", "+")
+        if (name.isEmpty()) return@withContext null
+        val conn = URL("https://fonts.googleapis.com/css?family=$name").openConnection()
+        (conn as HttpURLConnection).setRequestProperty("User-Agent", "Mozilla/4.0")
+        conn.connectTimeout = 10000
+        conn.readTimeout = 10000
+        val css = conn.inputStream.bufferedReader().use { it.readText() }
+        val m = Regex("url\\((https://[^)]+\\.ttf)\\)").find(css) ?: return@withContext null
+        val file = File(context.cacheDir, "ripe_font_" + name.replace("+", "_") + ".ttf")
+        if (!file.exists() || file.length() == 0L) {
+            val dl = URL(m.groupValues[1]).openConnection()
+            (dl as HttpURLConnection).connectTimeout = 10000
+            dl.readTimeout = 15000
+            dl.inputStream.use { input -> file.outputStream().use { input.copyTo(it) } }
+        }
+        if (file.length() > 0L) {
+            FontFamily(
+                Font(file, FontWeight.Normal),
+                Font(file, FontWeight.Bold)
+            )
+        } else null
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/** The GitHub-style, themed start / sign-in page (mirrors the web #auth page). */
+@Composable
+fun RipeStartPage(
+    p: RipePalette,
+    cloudEmail: String?,
+    cloudBusy: Boolean,
+    cloudMsg: String?,
+    cloudMsgBad: Boolean,
+    onSignIn: (String, String) -> Unit,
+    onCreate: (String, String) -> Unit,
+    onGoogle: () -> Unit,
+    onGuest: () -> Unit,
+    onContinue: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var pass by remember { mutableStateOf("") }
+    val signedIn = cloudEmail != null
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(p.bg)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(p.panel)
+                .padding(24.dp)
+        ) {
+            Text("Ripe FR-1", fontFamily = LocalDisplayFont.current, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = p.ink, letterSpacing = (-0.4).sp)
+            Text("Food spoilage monitor", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.muted, modifier = Modifier.padding(top = 2.dp, bottom = 18.dp))
+
+            if (signedIn) {
+                Text("Signed in as $cloudEmail", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink2)
+                Text(
+                    "Readings and look-and-feel are shared with every device on this account.",
+                    fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted, lineHeight = 18.sp,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
+                )
+                CloudButton("Continue to dashboard", filled = true, enabled = true, p = p) { onContinue() }
+                Spacer(modifier = Modifier.height(10.dp))
+                CloudButton("Sign out", filled = false, enabled = !cloudBusy, p = p) { onSignOut() }
+            } else {
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it }, singleLine = true,
+                    label = { Text("Email", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
+                        unfocusedBorderColor = p.sunken, focusedBorderColor = p.warn,
+                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = pass, onValueChange = { pass = it }, singleLine = true,
+                    label = { Text("Password", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
+                        unfocusedBorderColor = p.sunken, focusedBorderColor = p.warn,
+                    ),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                CloudButton("Sign in", filled = true, enabled = !cloudBusy, p = p) { onSignIn(email.trim(), pass) }
+                Spacer(modifier = Modifier.height(10.dp))
+                CloudButton("Create account", filled = false, enabled = !cloudBusy, p = p) { onCreate(email.trim(), pass) }
+                Spacer(modifier = Modifier.height(10.dp))
+                CloudButton("Continue with Google", filled = false, enabled = !cloudBusy, p = p) { onGoogle() }
+                Spacer(modifier = Modifier.height(10.dp))
+                CloudButton("Continue as guest", filled = false, enabled = true, p = p) { onGuest() }
+            }
+
+            if (cloudMsg != null) {
+                Text(
+                    cloudMsg, fontFamily = LocalUiFont.current, fontSize = 12.5.sp,
+                    color = if (cloudMsgBad) p.spoiled else p.fresh,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+        }
+    }
+}
+
+/** The default Custom-dashboard board (mirrors the web's 6-column layout). */
+fun defaultBoardLayout(): List<BoardItem> = listOf(
+    BoardItem("readout", 0, 0, 4, 2),
+    BoardItem("verdict", 4, 0, 2, 1),
+    BoardItem("chamber", 4, 1, 2, 1),
+    BoardItem("trend", 0, 2, 3, 1),
+    BoardItem("log", 3, 2, 3, 1),
+    BoardItem("device", 0, 3, 2, 1),
+    BoardItem("calib", 2, 3, 4, 1)
+)
+
+private val BOARD_DEFS = listOf(
+    "readout" to "Live readout", "verdict" to "Verdict", "trend" to "VOC trend",
+    "log" to "Status history", "device" to "Device", "chamber" to "Bench setup",
+    "calib" to "Calibration"
+)
+
+@Composable
+fun BoardTinyButton(label: String, p: RipePalette, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(p.sunken)
+            .clickable { onClick() }
+            .padding(horizontal = 8.dp, vertical = 5.dp)
+    ) {
+        Text(label, fontFamily = LocalUiFont.current, fontSize = 11.5.sp, color = p.ink)
+    }
+}
+
+private fun boardOverlap(a: BoardItem, b: BoardItem): Boolean =
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
+/** Nudge a moved widget down until it no longer overlaps a neighbour. */
+private fun resolveBoard(layout: List<BoardItem>, index: Int, moved: BoardItem): BoardItem {
+    var cur = moved
+    var guard = 0
+    while (guard < 64 && layout.indices.any { it != index && boardOverlap(layout[it], cur) }) {
+        cur = cur.copy(y = cur.y + 1)
+        guard++
+    }
+    return cur
+}
+
+/** Panel entrance: fades in and rises, mirroring the web's [data-anim] motion. */
+@Composable
+fun Reveal(animOn: Boolean, content: @Composable () -> Unit) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { shown = true }
+    val a by animateFloatAsState(
+        targetValue = if (!animOn || shown) 1f else 0f,
+        animationSpec = tween(durationMillis = 460),
+        label = "revealA"
+    )
+    val rise by animateFloatAsState(
+        targetValue = if (!animOn || shown) 0f else 26f,
+        animationSpec = tween(durationMillis = 460),
+        label = "revealY"
+    )
+    Box(modifier = Modifier.graphicsLayer { alpha = a; translationY = rise }) { content() }
+}
+
+/** One board widget's body (kept separate so the grid code stays readable). */
+@Composable
+fun BoardWidgetContent(
+    id: String, p: RipePalette, rawValue: Int, percentage: Int, status: String,
+    lastSeen: String, chipLabel: String, logs: List<LogEntry>, trend: List<Int>,
+    floor: Int, warn: Int, spoiled: Int
+) {
+    when (id) {
+        "readout" -> {
+            Text(String.format(Locale.US, "%,d", rawValue), fontFamily = LocalDisplayFont.current, fontSize = 38.sp, fontWeight = FontWeight.Bold, color = p.ink)
+            Text("$percentage% VOC", fontFamily = LocalDisplayFont.current, fontSize = 12.5.sp, color = p.muted)
+        }
+        "verdict" -> Text(status, fontFamily = LocalDisplayFont.current, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = when (status) { "WARNING" -> p.warn; "SPOILED" -> p.spoiled; else -> p.fresh })
+        "trend" -> Canvas(modifier = Modifier.fillMaxWidth().height(46.dp)) {
+            val vals = trend.takeLast(50)
+            if (vals.size >= 2) {
+                val mn = vals.min(); val mx = vals.max().coerceAtLeast(mn + 1)
+                val dx = size.width / (vals.size - 1)
+                val path = Path()
+                vals.forEachIndexed { k, v ->
+                    val x = dx * k
+                    val y = size.height - (v - mn).toFloat() / (mx - mn).toFloat() * size.height
+                    if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(path, color = p.warn, style = Stroke(width = 2f))
+            }
+        }
+        "log" -> {
+            if (logs.isEmpty()) Text("No changes yet", fontFamily = LocalUiFont.current, fontSize = 12.sp, color = p.muted)
+            else logs.take(3).forEach { e ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(e.time, fontFamily = LocalDisplayFont.current, fontSize = 11.5.sp, color = p.muted)
+                    Text(e.status, fontFamily = LocalDisplayFont.current, fontSize = 11.5.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                }
+            }
+        }
+        "device" -> {
+            Text(chipLabel, fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.ink)
+            Text("Last seen $lastSeen", fontFamily = LocalUiFont.current, fontSize = 12.sp, color = p.muted)
+        }
+        "chamber" -> ChamberCard(p)
+        "calib" -> {
+            Text("floor $floor · warn $warn", fontFamily = LocalUiFont.current, fontSize = 12.sp, color = p.muted)
+            Text("discard $spoiled", fontFamily = LocalUiFont.current, fontSize = 12.sp, color = p.muted)
+        }
+    }
+}
+
+/** The Custom dashboard board: drag a widget to move it, drag its corner to resize. */
+@Composable
+fun CustomBoardScreen(
+    p: RipePalette,
+    layout: List<BoardItem>,
+    onLayoutChange: (List<BoardItem>) -> Unit,
+    greetWord: String,
+    greetName: String,
+    clockText: String,
+    signedInDash: Boolean,
+    cloudEmail: String?,
+    onOpenAuth: () -> Unit,
+    onOpenSettings: () -> Unit,
+    rawValue: Int,
+    percentage: Int,
+    status: String,
+    lastSeen: String,
+    chipLabel: String,
+    chipColor: Color,
+    logs: List<LogEntry>,
+    trend: List<Int>,
+    floor: Int,
+    warn: Int,
+    spoiled: Int
+) {
+    val present = layout.map { it.id }.toSet()
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(20.dp)) {
+        item {
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp, top = 8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ripe FR-1", fontFamily = LocalDisplayFont.current, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(chipColor))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(chipLabel, fontFamily = LocalUiFont.current, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.muted)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Account", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink, modifier = Modifier.clickable { onOpenAuth() }.padding(horizontal = 10.dp, vertical = 7.dp))
+                        Text("Settings", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink, modifier = Modifier.clickable { onOpenSettings() }.padding(horizontal = 10.dp, vertical = 7.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("$greetWord, $greetName", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                Text("$clockText  ·  " + if (signedInDash) "syncing as $cloudEmail" else "this device only", fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted)
+            }
+        }
+        item {
+            SettingsSection("CUSTOM BOARD", p)
+            Text("Add widgets below, then drag to move them and drag a corner to resize.", fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted, lineHeight = 18.sp)
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BOARD_DEFS.filter { it.first !in present }.forEach { (id, label) ->
+                    BoardTinyButton("+ " + label, p) { onLayoutChange(layout + BoardItem(id, 0, layout.size, 6, 1)) }
+                }
+                if (BOARD_DEFS.all { it.first in present }) {
+                    Text("All widgets shown", fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted)
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Reset board", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink2, textDecoration = TextDecoration.Underline, modifier = Modifier.clickable { onLayoutChange(defaultBoardLayout()) })
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        item {
+            // Full drag + resize board: widgets are absolutely placed on a
+            // 6-column grid and moved/resized with drag gestures (mirrors web).
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                val gap = 10.dp
+                val cols = 6
+                val cellW = (maxWidth - gap * (cols - 1)) / cols
+                val cellH = 92.dp
+                val cellWpx = with(LocalDensity.current) { (cellW + gap).toPx() }
+                val cellHpx = with(LocalDensity.current) { (cellH + gap).toPx() }
+                val rows = (layout.maxOfOrNull { it.y + it.h } ?: 1).coerceAtLeast(1)
+                Box(modifier = Modifier.fillMaxWidth().height(cellH * rows + gap * (rows - 1))) {
+                    layout.forEachIndexed { i, bi ->
+                        key(bi.id) {
+                            var drag by remember(bi) { mutableStateOf(Offset.Zero) }
+                            var rez by remember(bi) { mutableStateOf(Offset.Zero) }
+                            val bx = cellW * bi.x + gap * bi.x
+                            val by = cellH * bi.y + gap * bi.y
+                            val wDp = cellW * bi.w + gap * (bi.w - 1)
+                            val hDp = cellH * bi.h + gap * (bi.h - 1)
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = bx, y = by)
+                                    .width(wDp)
+                                    .height(hDp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(p.panel)
+                                    .pointerInput(bi) {
+                                        detectDragGestures(
+                                            onDrag = { change, delta -> change.consume(); drag += delta },
+                                            onDragEnd = {
+                                                val nx = ((bx.toPx() + drag.x) / cellWpx).roundToInt().coerceIn(0, cols - bi.w)
+                                                val ny = ((by.toPx() + drag.y) / cellHpx).roundToInt().coerceAtLeast(0)
+                                                val moved = resolveBoard(layout, i, bi.copy(x = nx, y = ny))
+                                                drag = Offset.Zero
+                                                if (moved != bi) onLayoutChange(layout.toMutableList().also { it[i] = moved })
+                                            },
+                                            onDragCancel = { drag = Offset.Zero }
+                                        )
+                                    }
+                                    .offset { IntOffset(drag.x.roundToInt(), drag.y.roundToInt()) }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            BOARD_DEFS.firstOrNull { it.first == bi.id }?.second ?: bi.id,
+                                            fontFamily = LocalDisplayFont.current, fontSize = 10.5.sp, fontWeight = FontWeight.Bold,
+                                            color = p.muted, letterSpacing = 0.6.sp, modifier = Modifier.weight(1f)
+                                        )
+                                        BoardTinyButton("✕", p) { onLayoutChange(layout.filterIndexed { j, _ -> j != i }) }
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    BoardWidgetContent(
+                                        id = bi.id, p = p, rawValue = rawValue, percentage = percentage,
+                                        status = status, lastSeen = lastSeen, chipLabel = chipLabel,
+                                        logs = logs, trend = trend, floor = floor, warn = warn, spoiled = spoiled
+                                    )
+                                }
+                                // Drag this corner to resize the widget.
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .size(26.dp)
+                                        .clip(RoundedCornerShape(topStart = 10.dp))
+                                        .background(p.sunken)
+                                        .pointerInput(bi) {
+                                            detectDragGestures(
+                                                onDrag = { change, delta -> change.consume(); rez += delta },
+                                                onDragEnd = {
+                                                    val nw = (bi.w + (rez.x / cellWpx).roundToInt()).coerceIn(1, cols - bi.x)
+                                                    val nh = (bi.h + (rez.y / cellHpx).roundToInt()).coerceIn(1, 3)
+                                                    rez = Offset.Zero
+                                                    val resized = bi.copy(w = nw, h = nh)
+                                                    if (resized != bi) onLayoutChange(layout.toMutableList().also { it[i] = resized })
+                                                },
+                                                onDragCancel = { rez = Offset.Zero }
+                                            )
+                                        }
+                                ) {
+                                    Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
+                                        for (k in 0..2) {
+                                            val o = k * 5f + 2f
+                                            drawLine(p.muted, Offset(size.width - o, size.height), Offset(size.width, size.height - o), 1.5f)
+                                        }
+                                    }
+                                }
                             }
                         }
-                    },
-                    onCloudSignOut = {
-                        scope.launch { RipeCloud.googleSignOut(context) }
-                        RipeCloud.signOutNow()
-                        cloudMsg = "Signed out."; cloudMsgBad = false
-                    },
-                    onClose = { showSettings = false }
-                )
+                    }
+                }
             }
         }
     }
@@ -658,10 +1283,8 @@ fun SettingsDialog(
     cloudMsg: String?,
     cloudMsgBad: Boolean,
     onApply: (RipeSettings) -> Unit,
-    onCloudSignIn: (String, String) -> Unit,
-    onCloudCreate: (String, String) -> Unit,
-    onCloudGoogle: () -> Unit,
     onCloudSignOut: () -> Unit,
+    onOpenAuth: () -> Unit,
     onClose: () -> Unit
 ) {
     var themeSelection by remember(settings) { mutableStateOf(settings.theme) }
@@ -680,11 +1303,18 @@ fun SettingsDialog(
                 settings.sync else "Off"
         )
     }
-    var acctEmail by remember { mutableStateOf("") }
-    var acctPass by remember { mutableStateOf("") }
     var testResult by remember { mutableStateOf<String?>(null) }
+    // v1.1.0 look & feel
+    var animSelection by remember(settings) { mutableStateOf(settings.anim) }
+    var nameText by remember(settings) { mutableStateOf(settings.name) }
+    var fHeadText by remember(settings) { mutableStateOf(settings.fHead) }
+    var fBodyText by remember(settings) { mutableStateOf(settings.fBody) }
+    var colorsState by remember(settings) { mutableStateOf(settings.colors) }
+    var presetSelection by remember(settings) { mutableStateOf("Ripe") }
+    var showColors by remember { mutableStateOf(false) }
+    val signedIn = cloudEmail != null
     val scope = rememberCoroutineScope()
-    val p = activePalette(settings.theme)
+    val p = activePalette(settings)
 
     fun buildUrl(): String =
         if (routingSelection == "Via local server")
@@ -730,26 +1360,98 @@ fun SettingsDialog(
                 LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
                     item {
                         SettingsSection("DASHBOARD", p)
-                        SegmentedControl(listOf("Basic", "Advanced"), modeSelection, p) { modeSelection = it }
-                        SettingsHint(if (modeSelection == "Basic")
-                            "Basic hides the numbers — just says whether the food is spoiled."
-                        else
-                            "Advanced shows the live ADC readout, VOC trend, status history and calibration.",
-                            p)
+                        SegmentedControl(listOf("Basic", "Advanced", "Custom"), modeSelection, p) { modeSelection = it }
+                        SettingsHint(
+                            when (modeSelection) {
+                                "Basic" -> "Basic hides the numbers — just says whether the food is spoiled."
+                                "Custom" -> "Custom shows the dashboard board — pick which widgets you want."
+                                else -> "Advanced shows the live ADC readout, VOC trend, status history and calibration."
+                            },
+                            p
+                        )
                         Spacer(modifier = Modifier.height(24.dp))
 
                         SettingsSection("APPEARANCE", p)
-                        SegmentedControl(listOf("Light", "Dark", "System"), themeSelection, p) { themeSelection = it }
-                        SettingsHint("Stored on this device — the ESP32 stores no theme data.", p)
+                        SegmentedControl(listOf("Light", "Dark", "System", "Custom"), themeSelection, p) { themeSelection = it }
+                        SettingsHint(if (themeSelection == "Custom")
+                            "Custom uses the palette below and overrides Light and Dark."
+                        else
+                            "Stored on this device and shared with your account.", p)
                         Spacer(modifier = Modifier.height(12.dp))
-                        SegmentedControl(listOf("Grotesk", "Editorial"), fontSelection, p) { fontSelection = it }
+                        SegmentedControl(listOf("Grotesk", "Editorial", "Custom"), fontSelection, p) { fontSelection = it }
                         SettingsHint(
-                            if (fontSelection == "Editorial")
-                                "Editorial: Merriweather for headings and figures, PT Sans for body text."
-                            else
-                                "Grotesk: Space Grotesk + Urbanist.",
+                            when (fontSelection) {
+                                "Editorial" -> "Editorial: Merriweather for headings and figures, PT Sans for body text."
+                                "Custom" -> "Custom: downloads the Google Fonts families below at runtime and caches them."
+                                else -> "Grotesk: Space Grotesk + Urbanist."
+                            },
                             p
                         )
+                        if (fontSelection == "Custom") {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = fHeadText, onValueChange = { fHeadText = it }, singleLine = true,
+                                label = { Text("Display font family", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
+                                    unfocusedBorderColor = p.sunken, focusedBorderColor = p.warn,
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = fBodyText, onValueChange = { fBodyText = it }, singleLine = true,
+                                label = { Text("Body font family", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
+                                    unfocusedBorderColor = p.sunken, focusedBorderColor = p.warn,
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            SettingsHint("e.g. Playfair Display, Inter, Lora. Saved on save & connect.", p)
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        SettingsSection("COLOURS — CUSTOM THEME", p)
+                        SegmentedControl(listOf("Ripe", "Midnight", "Paper", "Contrast"), presetSelection, p) {
+                            presetSelection = it
+                            colorsState = COLOR_PRESETS[it] ?: emptyMap()
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(p.sunken)
+                                .clickable { showColors = !showColors }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(if (showColors) "▾" else "▸", fontFamily = LocalDisplayFont.current, fontSize = 12.sp, color = p.muted)
+                            Spacer(modifier = Modifier.width(7.dp))
+                            Text("Customise each colour", fontFamily = LocalDisplayFont.current, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                        }
+                        if (showColors) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            COLOR_TOKENS.forEach { (key, label) ->
+                                ColorRow(label, colorsState[key] ?: RipeDefaultColors[key] ?: "#000000", p) { v ->
+                                    colorsState = colorsState + (key to v)
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "Reset all colours", fontFamily = LocalUiFont.current, fontSize = 13.sp,
+                                color = p.ink2, textDecoration = TextDecoration.Underline,
+                                modifier = Modifier.clickable { colorsState = emptyMap() }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        SettingsSection("MOTION", p)
+                        SegmentedControl(listOf("On", "Off"), animSelection, p) { animSelection = it }
+                        SettingsHint("Panels rise in and figures count up. Choose Off to reduce motion.", p)
                         Spacer(modifier = Modifier.height(24.dp))
 
                         SettingsSection("DATA SOURCE", p)
@@ -807,67 +1509,44 @@ fun SettingsDialog(
                         Spacer(modifier = Modifier.height(24.dp))
 
                         SettingsSection("ACCOUNT", p)
-                        if (cloudEmail != null) {
+                        if (signedIn) {
                             Text(
                                 "Signed in as $cloudEmail — readings and settings are shared with every device on this account.",
                                 fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
                                 lineHeight = 18.sp, modifier = Modifier.padding(bottom = 12.dp)
                             )
-                            CloudButton("Sign out", filled = false, enabled = true, p = p) { onCloudSignOut() }
                         } else {
                             Text(
                                 "Not signed in — sign in to share readings and settings across your devices.",
                                 fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
                                 lineHeight = 18.sp, modifier = Modifier.padding(bottom = 12.dp)
                             )
-                            OutlinedTextField(
-                                value = acctEmail,
-                                onValueChange = { acctEmail = it },
-                                singleLine = true,
-                                label = { Text("Email", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedContainerColor = p.panelHi,
-                                    focusedContainerColor = p.panelHi,
-                                    unfocusedBorderColor = p.sunken,
-                                    focusedBorderColor = p.warn,
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            OutlinedTextField(
-                                value = acctPass,
-                                onValueChange = { acctPass = it },
-                                singleLine = true,
-                                label = { Text("Password", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
-                                visualTransformation = PasswordVisualTransformation(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedContainerColor = p.panelHi,
-                                    focusedContainerColor = p.panelHi,
-                                    unfocusedBorderColor = p.sunken,
-                                    focusedBorderColor = p.warn,
-                                ),
-                                textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CloudButton("Sign in", filled = true, enabled = !cloudBusy, p = p) {
-                                    onCloudSignIn(acctEmail.trim(), acctPass)
-                                }
-                                CloudButton("Create account", filled = false, enabled = !cloudBusy, p = p) {
-                                    onCloudCreate(acctEmail.trim(), acctPass)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(10.dp))
-                            CloudButton("Use Google instead", filled = false, enabled = !cloudBusy, p = p) {
-                                onCloudGoogle()
-                            }
+                        }
+                        Text("DISPLAY NAME", fontFamily = LocalDisplayFont.current, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.muted, modifier = Modifier.padding(bottom = 6.dp))
+                        OutlinedTextField(
+                            value = if (signedIn) nameText else "Guest",
+                            onValueChange = { nameText = it },
+                            enabled = signedIn,
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedContainerColor = p.panelHi,
+                                focusedContainerColor = p.panelHi,
+                                unfocusedBorderColor = p.sunken,
+                                focusedBorderColor = p.warn,
+                                disabledContainerColor = p.sunken,
+                                disabledTextColor = p.muted,
+                            ),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        SettingsHint(
+                            if (signedIn) "Shown in the greeting — works for Google and email accounts."
+                            else "Guests always show as “Guest”. Sign in to set a name.", p
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            CloudButton(if (signedIn) "Manage account" else "Sign in", filled = true, enabled = !cloudBusy, p = p) { onOpenAuth() }
+                            if (signedIn) CloudButton("Sign out", filled = false, enabled = !cloudBusy, p = p) { onCloudSignOut() }
                         }
                         if (cloudMsg != null) {
                             Text(
@@ -901,7 +1580,7 @@ fun SettingsDialog(
                                         else -> 2000L
                                     }
                                     onApply(
-                                        RipeSettings(
+                                        settings.copy(
                                             theme = themeSelection,
                                             font = fontSelection,
                                             mode = modeSelection,
@@ -910,7 +1589,12 @@ fun SettingsDialog(
                                             port = port,
                                             routing = routingSelection,
                                             pollingMs = pollMs,
-                                            sync = syncSelection
+                                            sync = syncSelection,
+                                            anim = animSelection,
+                                            name = if (signedIn) nameText.trim() else settings.name,
+                                            fHead = if (fontSelection == "Custom") fHeadText.trim() else settings.fHead,
+                                            fBody = if (fontSelection == "Custom") fBodyText.trim() else settings.fBody,
+                                            colors = colorsState
                                         )
                                     )
                                 },
@@ -983,6 +1667,45 @@ fun SegmentedControl(options: List<String>, selected: String, p: RipePalette, on
     }
 }
 
+/** One editable colour token: label + CSS text field + live swatch. */
+@Composable
+fun ColorRow(label: String, value: String, p: RipePalette, onChange: (String) -> Unit) {
+    var text by remember(value) { mutableStateOf(value) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label, fontFamily = LocalUiFont.current, fontSize = 12.sp, color = p.muted,
+            maxLines = 1, modifier = Modifier.weight(1f)
+        )
+        OutlinedTextField(
+            value = text,
+            onValueChange = { v ->
+                text = v
+                val parsed = parseCssColor(v, Color.Transparent)
+                if (parsed.alpha > 0f) onChange(v)
+            },
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                unfocusedContainerColor = p.panelHi,
+                focusedContainerColor = p.panelHi,
+                unfocusedBorderColor = p.sunken,
+                focusedBorderColor = p.warn,
+            ),
+            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.ink),
+            modifier = Modifier.width(122.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(parseCssColor(value, Color.Gray))
+        )
+    }
+}
+
 @Composable
 fun SettingsSection(title: String, p: RipePalette) {
     Text(text = title, fontFamily = LocalDisplayFont.current, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.muted, letterSpacing = 1.sp, modifier = Modifier.padding(bottom = 10.dp))
@@ -1020,7 +1743,9 @@ fun FoodMonitorDashboard(
     follow: Boolean,
     followedReading: Reading?,
     onPublish: (Reading) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenAuth: () -> Unit,
+    onLayoutChange: (List<BoardItem>) -> Unit
 ) {
     var rawValue by remember { mutableStateOf(1398) }
     var avgValue by remember { mutableStateOf(1398) }
@@ -1028,8 +1753,24 @@ fun FoodMonitorDashboard(
     var status by remember { mutableStateOf("FRESH") }
     var offline by remember { mutableStateOf(false) }
     var lastSeen by remember { mutableStateOf("—") }
-    val p = activePalette(settings.theme)
+    val p = activePalette(settings)
     val basic = settings.mode == "Basic"
+    val animOn = settings.anim != "Off"
+    val signedInDash = cloudEmail != null
+    val greetName = if (!signedInDash) "Guest"
+        else settings.name.trim().ifBlank { cloudEmail.orEmpty().substringBefore("@") }.ifBlank { "Guest" }
+    val hourNow = remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) }
+    val greetWord = when {
+        hourNow.value < 12 -> "Good morning"
+        hourNow.value < 17 -> "Good afternoon"
+        else -> "Good evening"
+    }
+    var clockText by remember { mutableStateOf("") }
+    val shownRaw by animateIntAsState(
+        targetValue = rawValue,
+        animationSpec = tween(durationMillis = if (animOn) 600 else 0),
+        label = "raw"
+    )
     // The BleClient closure is created once (remember) and would otherwise keep
     // a stale publish callback; remembered state keeps it current.
     val onPublishNow = rememberUpdatedState(onPublish)
@@ -1059,6 +1800,14 @@ fun FoodMonitorDashboard(
     var blePrompted by remember { mutableStateOf(false) }
     var bleStatus by remember { mutableStateOf("") }
     val timeFormat = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+
+    // Live clock under the greeting (updates every second).
+    LaunchedEffect(Unit) {
+        while (true) {
+            clockText = timeFormat.format(Date())
+            delay(1000)
+        }
+    }
 
     // Apply one snapshot (Wi-Fi / BLE / mock) to the dashboard and seed the
     // calibration inputs from the first reading the device sends.
@@ -1252,44 +2001,84 @@ fun FoodMonitorDashboard(
     }
     val chipColor = if (offline) p.spoiled else p.fresh
 
+    if (settings.mode == "Custom") {
+        CustomBoardScreen(
+            p = p,
+            layout = settings.layout,
+            onLayoutChange = onLayoutChange,
+            greetWord = greetWord,
+            greetName = greetName,
+            clockText = clockText,
+            signedInDash = signedInDash,
+            cloudEmail = cloudEmail,
+            onOpenAuth = onOpenAuth,
+            onOpenSettings = onOpenSettings,
+            rawValue = if (animOn) shownRaw else rawValue,
+            percentage = percentage,
+            status = status,
+            lastSeen = lastSeen,
+            chipLabel = chipLabel,
+            chipColor = chipColor,
+            logs = logs,
+            trend = trendData,
+            floor = devFloor,
+            warn = devWarn,
+            spoiled = devSpoiled
+        )
+        return
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(20.dp)
     ) {
         item {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp, top = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.Bottom) {
+            // Header + plain greeting line (no card), with a live clock.
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp, top = 8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("Ripe FR-1", fontFamily = LocalDisplayFont.current, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = p.ink, letterSpacing = (-0.2).sp)
-                }
-                
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(chipColor))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(chipLabel, fontFamily = LocalUiFont.current, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.muted)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    
-                    // Settings Button
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.Transparent)
-                            .clickable { onOpenSettings() }
-                            .padding(horizontal = 13.dp, vertical = 7.dp)
-                    ) {
-                        Text("Settings", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink)
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(chipColor))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(chipLabel, fontFamily = LocalUiFont.current, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.muted)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onOpenAuth() }
+                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                        ) {
+                            Text("Account", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onOpenSettings() }
+                                .padding(horizontal = 11.dp, vertical = 7.dp)
+                        ) {
+                            Text("Settings", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink)
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("$greetWord, $greetName", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                Text(
+                    "$clockText  ·  " + if (signedInDash) "syncing as $cloudEmail" else "this device only",
+                    fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
             }
         }
         
         item {
             if (basic) return@item
+            Reveal(animOn) {
             // 1. Graphite Readout Display
             Box(
                 modifier = Modifier
@@ -1307,7 +2096,7 @@ fun FoodMonitorDashboard(
                     Spacer(modifier = Modifier.height(14.dp))
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            text = String.format("%,d", rawValue),
+                            text = String.format("%,d", if (animOn) shownRaw else rawValue),
                             fontFamily = LocalDisplayFont.current,
                             fontSize = 72.sp,
                             fontWeight = FontWeight.Bold,
@@ -1357,9 +2146,11 @@ fun FoodMonitorDashboard(
                 }
             }
             Spacer(modifier = Modifier.height(14.dp))
+            }
         }
 
         item {
+            Reveal(animOn) {
             // 2. Verdict Panel
             Box(
                 modifier = Modifier
@@ -1423,10 +2214,12 @@ fun FoodMonitorDashboard(
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
         
         item {
             if (basic) return@item
+            Reveal(animOn) {
             // 3. Trend Canvas Chart
             Text(text = "VOC TREND", fontFamily = LocalDisplayFont.current, fontSize = 11.sp, color = p.muted, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
             Spacer(modifier = Modifier.height(16.dp))
@@ -1460,9 +2253,11 @@ fun FoodMonitorDashboard(
                 Text("3900", fontFamily = LocalDisplayFont.current, fontSize = 11.sp, color = p.muted)
             }
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
 
         item {
+            Reveal(animOn) {
             // 4. Status History
             Box(
                 modifier = Modifier
@@ -1503,16 +2298,20 @@ fun FoodMonitorDashboard(
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
 
         item {
+            Reveal(animOn) {
             // 5. Bench setup — the dashboard's one custom illustration (web #6)
             ChamberCard(p)
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
 
         item {
             if (basic) return@item
+            Reveal(animOn) {
             // 6. Calibration — mirrors the web "Calibration" card
             CalibrationCard(
                 warn = cfgWarn, spoiled = cfgSpoiled, floor = cfgFloor, ceil = cfgCeil,
@@ -1535,6 +2334,7 @@ fun FoodMonitorDashboard(
                 p = p
             )
             Spacer(modifier = Modifier.height(24.dp))
+            }
         }
     }
 }

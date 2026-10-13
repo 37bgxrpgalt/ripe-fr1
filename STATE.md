@@ -618,3 +618,50 @@ workflow serves `web/` at <https://37bgxrpgalt.github.io/ripe-fr1/>.
 6. Keep the locked design language (`design.md`): warm hue ~40, one accent
    `#edb100`, no gradients/cool grays/emoji. Re-run `tools\embed_page.ps1` after
    any future `web/index.html` edit.
+
+---
+
+## Update - 2026-10-12: **v1.1.0** (motion, colours, fonts, sign-in page, custom board)
+
+Round implemented locally and **verified in the browser tool** on the PowerShell
+server; **not committed and not released** — waiting for the user's sign-off on
+both web and Android.
+
+### Web (`web/index.html`, `web/firebase.js`)
+- Page-wide **motion**: `[data-anim]` + `@keyframes fadeIn` / `riseIn`, staggered
+  `.blk`, gated by a Motion On/Off setting shared with the account.
+- **Colours**: a third **Custom** theme that overrides Light and Dark. 22 editable
+  tokens (`COLOR_TOKENS`), accepting `#rgb` / `#rrggbb` / `rgba(...)`, with four
+  presets; the editor is **collapsed by default**.
+- **Fonts**: Grotesk / Editorial / **Custom** (any family from fonts.google.com).
+- **Custom dashboard**: a third preset beside Basic / Advanced — a draggable and
+  resizable widget board (`#board`) seeded from the default layout and synced.
+- **Start page** (`#auth`) styled like the GitHub sign-in page (Email/Password,
+  Create account, Continue with Google, **Continue as guest**). It is the **first
+  page whenever the user is not signed in**; a header **Account** button reopens
+  it. Auth controls left Settings.
+- **Greeting + live clock** under the "Ripe FR-1" title (plain, no card). Guest is
+  locked to "Guest"; a Google/email account's display name is editable.
+- `pushPrefs` now writes `updatedAt` plus `name`, `anim`, `fHead`, `fBody`,
+  `colors`, `layout`; `firebase.js` import bumped to `?v=4`.
+
+### Android (`android_app/.../MainActivity.kt`, `RipeCloud.kt`)
+- Same feature set ported. **`MainActivity.kt` compiles cleanly** with the local
+  Gradle 8.4 wrapper + JBR 17 (`--offline`), and a debug APK builds at
+  `D:\Ripe FR-1 v1.1.0-debug.apk`.
+- `COLOR_TOKENS` (18, keyed by the web CSS-var names) + `customPalette` +
+  an `activePalette` Custom branch; `RipeSettings` extended with `name`, `anim`,
+  `fHead`, `fBody`, `colors`, `layout`, `layoutReady`, `entered`; `RipeCloud`
+  carries the new prefs fields.
+- Store-ready start page, greeting/clock, collapsed colour editor, Motion switch,
+  and runtime Google-Font download + cache (legacy-UA CSS → TTF).
+- Custom board is **true drag + resize** (6-column grid, `detectDragGestures`,
+  overlap nudging) and the dashboard panels **fade/rise in** (`Reveal`).
+- Fixed a latent bug where "Save & connect" rebuilt `RipeSettings` from scratch
+  (which would have dropped every v1.1.0 field) — it now uses `settings.copy(...)`.
+
+### Generated / docs
+- `esp32/food_spoilage_monitor/web_page.h` regenerated from `web/index.html` via
+  `tools\embed_page.ps1` (107.1 KB); `favicon_svg.h` unchanged.
+- **Uncommitted on `main`** (HEAD `0da714c`). No push / release until the user
+  signs off on both platforms.

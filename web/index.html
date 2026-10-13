@@ -17,11 +17,17 @@
     var t=p.theme||'system';
     var dark=(t==='dark')||(t==='system'&&window.matchMedia&&
       window.matchMedia('(prefers-color-scheme: dark)').matches);
-    document.documentElement.setAttribute('data-theme',dark?'dark':'light');
+    var th=(t==='custom')?'custom':(dark?'dark':'light');
+    document.documentElement.setAttribute('data-theme',th);
     document.documentElement.setAttribute('data-font',
-      p.font==='editorial'?'editorial':'grotesk');
+      p.font==='editorial'?'editorial':(p.font==='custom'?'custom':'grotesk'));
     document.documentElement.setAttribute('data-mode',
-      p.mode==='basic'?'basic':'advanced');
+      (p.mode==='basic'||p.mode==='custom')?p.mode:'advanced');
+    document.documentElement.setAttribute('data-anim',p.anim==='off'?'off':'on');
+    if(th==='custom'&&p.colors){
+      var r=document.documentElement;
+      for(var k in p.colors){if(p.colors[k]){r.style.setProperty('--'+k,p.colors[k]);}}
+    }
   }catch(e){}
 })();
 </script>
@@ -323,9 +329,163 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
 @media (prefers-reduced-motion:reduce){
   *{animation:none!important;transition:none!important}
 }
+
+/* ==========================================================================
+   v1.1.0 — motion, greeting, sign-in page, colour editor, custom board
+   ========================================================================== */
+
+/* ---------- motion (toggle: Settings → Motion · or prefers-reduced-motion) - */
+@keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes popIn{from{opacity:0;transform:scale(.965)}to{opacity:1;transform:none}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:none}}
+[data-anim=on] .wrap{animation:fadeIn .45s ease backwards}
+[data-anim=on] .blk{animation:riseIn .55s cubic-bezier(.22,1,.36,1) backwards}
+[data-anim=on] .blk:nth-child(1){animation-delay:.04s}
+[data-anim=on] .blk:nth-child(2){animation-delay:.09s}
+[data-anim=on] .blk:nth-child(3){animation-delay:.14s}
+[data-anim=on] .blk:nth-child(4){animation-delay:.19s}
+[data-anim=on] .blk:nth-child(5){animation-delay:.24s}
+[data-anim=on] .blk:nth-child(6){animation-delay:.29s}
+[data-anim=on] .blk:nth-child(7){animation-delay:.34s}
+[data-anim=on] .greet{animation:slideIn .5s ease backwards;animation-delay:.02s}
+[data-anim=on] .scrim{animation:fadeIn .22s ease backwards}
+[data-anim=on] .sheet{animation:popIn .26s cubic-bezier(.22,1,.36,1) backwards}
+[data-anim=on] .authcard{animation:popIn .4s cubic-bezier(.22,1,.36,1) backwards}
+[data-anim=off] *{animation:none!important}
+.blk{transition:transform .25s ease,box-shadow .25s ease}
+[data-anim=on] .blk:hover{transform:translateY(-2px)}
+body,.panel,.readout,.verdict,.chamber,.greet,.authcard,.sheet{
+  transition:background .45s ease,color .45s ease,border-color .45s ease}
+.btn-primary,.btn-quiet,.hbtn,.tray button{transition:transform .12s ease,background .2s ease,filter .2s ease,color .2s ease}
+[data-anim=on] .btn-primary:active:not(:disabled){transform:scale(.97)}
+[data-anim=on] .btn-quiet:active{transform:scale(.98)}
+.vword{transition:color .35s ease}
+.fill{transition:width .8s cubic-bezier(.22,1,.36,1),background .4s ease}
+.lamp{transition:background .4s ease}
+
+/* ---------- greeting: plain line under the wordmark — no box ---------------- */
+.greet{
+  margin:0 0 18px;display:flex;align-items:center;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;
+}
+.greet[hidden]{display:none}
+.greet .gline{margin:0;text-align:left;font-family:var(--font-disp);font-weight:700;
+  font-size:20px;letter-spacing:-.01em;color:var(--ink)}
+.greet .gline .gname{color:var(--accent-deep)}
+.greet .gclock{margin-left:8px;font-family:var(--font-disp);font-variant-numeric:tabular-nums;
+  font-weight:500;font-size:15px;color:var(--muted)}
+.greet .gsub{margin:4px 0 0;text-align:left;font-size:12.5px;color:var(--muted)}
+.greet .gact{display:flex;align-items:center;gap:8px}
+
+/* ---------- sign-in / start page ------------------------------------------- */
+.auth{
+  position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;
+  align-items:center;justify-content:center;padding:26px 16px;overflow-y:auto;
+}
+.auth[hidden]{display:none}
+.authcard{width:min(430px,100%);background:var(--panel);border-radius:16px;padding:26px 26px 22px}
+.authcard .brand{text-align:center;font-family:var(--font-disp);font-weight:700;font-size:25px;letter-spacing:-.01em}
+.authcard .brand .model{color:var(--muted);font-weight:500;font-size:13px;letter-spacing:.07em;margin-left:6px}
+.authcard .tagline{margin:8px 0 20px;text-align:center;font-size:13px;line-height:1.5;color:var(--muted)}
+.authcard .fields{margin-top:0}
+.authsep{display:flex;align-items:center;gap:12px;margin:15px 0;color:var(--muted);font-size:12px}
+.authsep::before,.authsep::after{content:'';height:1px;background:var(--hair);flex:1}
+.authacct{text-align:center}
+.authacct .who{margin:0 0 6px;font-family:var(--font-disp);font-weight:600;font-size:16px}
+.authacct .sub{margin:0 0 16px;font-size:12.5px;color:var(--muted)}
+.authfoot{margin-top:16px;text-align:center}
+#authMsg{text-align:center;margin-top:12px}
+.auth .full{width:100%}
+.authrow{display:flex;gap:8px;flex-wrap:wrap}
+.authrow>*{flex:1;min-width:120px}
+
+/* ---------- colour editor (Settings → Colours) ----------------------------- */
+.colgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;margin-top:12px}
+.colrow{display:flex;align-items:center;gap:8px}
+.colrow>label{flex:1;min-width:0;font-size:12px;color:var(--muted);font-family:var(--font-disp);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.colrow input[type=color]{width:36px;height:31px;padding:0;border:1px solid var(--hair);
+  border-radius:8px;background:none;flex:none}
+.colrow input[type=text]{width:104px;padding:7px 9px;font-size:12.5px;flex:none}
+.disclosure{display:flex;align-items:center;gap:7px;margin-top:12px;padding:9px 12px;width:100%;
+  background:var(--sunken);border:1px solid var(--hair);border-radius:10px;color:var(--ink);
+  font-family:var(--font-disp);font-weight:600;font-size:13px;cursor:pointer;text-align:left}
+.disclosure:hover{border-color:var(--accent)}
+.disclosure .dcaret{color:var(--muted);font-size:11px;line-height:1}
+@media (max-width:520px){.colgrid{grid-template-columns:1fr}}
+
+/* ---------- custom dashboard board ----------------------------------------- */
+.board{display:none;position:relative;grid-template-columns:repeat(6,1fr);
+  grid-auto-rows:84px;gap:14px}
+[data-mode=custom] .bento{display:none}
+[data-mode=custom] .board{display:grid}
+.board .blk{position:relative;min-width:0;overflow:auto;overflow-x:hidden}
+.board.editing .blk{outline:1.5px dashed var(--hair);outline-offset:3px;cursor:grab}
+.board.editing .blk:hover{transform:none}
+.board .blk.dragging{cursor:grabbing;z-index:7;opacity:.92}
+.board .blk.resizing{z-index:7}
+.bhandle,.bclose{position:absolute;display:none;z-index:8;width:20px;height:20px;
+  border-radius:6px;border:1px solid var(--hair);background:var(--panel-hi);color:var(--ink-2);
+  font-size:12px;line-height:1;padding:0;align-items:center;justify-content:center}
+.board.editing .bhandle,.board.editing .bclose{display:flex}
+.bhandle{right:5px;bottom:5px;cursor:nwse-resize}
+.bclose{right:5px;top:5px;cursor:pointer}
+.tray{display:flex;flex-wrap:wrap;gap:8px}
+.tray button{border:1px solid var(--hair);background:var(--panel-hi);color:var(--ink);
+  border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:500}
+.tray button:hover{background:var(--sunken)}
+.tray:empty::after{content:'Every panel is already on the board.';font-size:12.5px;color:var(--muted)}
+[data-mode=custom] #customGrp{display:block}
+@media (max-width:860px){
+  [data-mode=custom] .wrap{overflow-x:auto}
+  .board{min-width:680px}
+}
 </style>
 </head>
 <body>
+
+<!-- start / sign-in page — shown before the dashboard (Settings no longer
+     holds the account controls; log in or out here instead) -->
+<div class="auth" id="auth" hidden>
+  <div class="authcard" role="dialog" aria-modal="true" aria-labelledby="authBrand">
+    <div class="brand" id="authBrand">Ripe<span class="model">FR‑1</span></div>
+
+    <div id="authForm">
+      <p class="tagline" id="authTag">Sign in to sync your meter across every device — or continue as a guest.</p>
+      <div class="fields">
+        <div class="field"><label for="authEmail">Email</label>
+          <input type="email" id="authEmail" placeholder="you@example.com" autocomplete="email" spellcheck="false"></div>
+        <div class="field"><label for="authPass">Password</label>
+          <input type="password" id="authPass" placeholder="at least 6 characters" autocomplete="current-password"></div>
+      </div>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn-primary full" id="authSignIn" type="button">Sign in</button>
+      </div>
+      <div class="authsep">or</div>
+      <div class="actions authrow" style="margin-top:0">
+        <button class="btn-quiet" id="authGoogle" type="button">Continue with Google</button>
+        <button class="btn-quiet" id="authCreate" type="button">Create account</button>
+      </div>
+    </div>
+
+    <div id="authAccount" class="authacct" hidden>
+      <p class="who" id="authWho">Signed in</p>
+      <p class="sub" id="authAs">Your readings and settings are shared with every device on this account.</p>
+      <button class="btn-primary full" id="authContinue" type="button">Continue to dashboard</button>
+      <div class="actions" style="margin-top:12px;justify-content:center">
+        <button class="btn-text" id="authSignOut" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <div class="authfoot">
+      <button class="btn-text" id="authGuest" type="button">Continue as guest</button>
+      <button class="btn-text" id="authBack" type="button" hidden>Back to dashboard</button>
+    </div>
+    <p class="msg" id="authMsg" aria-live="polite"></p>
+  </div>
+</div>
+
 <div class="wrap">
 
   <header>
@@ -335,9 +495,21 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
         <span class="lamp lamp-sm"></span>
         <span id="connText">Connecting…</span>
       </div>
+      <button class="btn-quiet hbtn" id="acctBtn" type="button" hidden>Account</button>
       <button class="btn-quiet hbtn" id="setBtn" aria-haspopup="dialog">Settings</button>
     </div>
   </header>
+
+  <!-- greeting: plain line under the wordmark (not boxed) — time follows the name -->
+  <div class="greet" id="greet" hidden>
+    <div>
+      <p class="gline"><span id="greetLine">Hello</span> <span class="gclock" id="greetClock">—</span></p>
+      <p class="gsub" id="greetSub">—</p>
+    </div>
+    <div class="gact">
+      <button class="btn-quiet hbtn" id="greetAcct" type="button" hidden>Account</button>
+    </div>
+  </div>
 
   <div class="banner" id="banner" role="alert" hidden>
     <strong id="bannerTitle">Reconnecting…</strong>
@@ -347,7 +519,7 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
   <main class="bento">
 
     <!-- 1 · readout: graphite display, 4/6 wide, two rows tall -->
-    <section class="blk readout" aria-label="Live reading">
+    <section class="blk readout" id="wReadout" aria-label="Live reading">
       <div class="spec">MQ‑3 · GPIO 34 · 12‑bit ADC 0–4095</div>
       <div class="bignum">
         <span id="rawNow">—</span>
@@ -383,7 +555,7 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
     </section>
 
     <!-- 3 · trend (whitespace, no box) -->
-    <section class="blk ghost trend" aria-label="Trend">
+    <section class="blk ghost trend" id="wTrend" aria-label="Trend">
       <div class="shead">
         <h2>VOC trend</h2>
         <span class="side">90 samples = 3 min</span>
@@ -393,14 +565,14 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
     </section>
 
     <!-- 4 · status history -->
-    <section class="blk panel log">
+    <section class="blk panel log" id="wLog">
       <div class="shead"><h2>Status history</h2></div>
       <div class="logList" id="logList" role="log" aria-live="polite"></div>
       <p class="empty" id="logEmpty">No status changes since boot.</p>
     </section>
 
     <!-- 5 · device (whitespace, no box) + Bluetooth one level down -->
-    <section class="blk ghost device">
+    <section class="blk ghost device" id="wDevice">
       <div class="shead"><h2>Device</h2></div>
       <dl class="dl">
         <div><dt>Link</dt><dd id="iMode">—</dd></div>
@@ -417,7 +589,7 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
     </section>
 
     <!-- 6 · bench setup illustration (only graphic in the UI) -->
-    <section class="blk chamber" aria-label="Bench setup">
+    <section class="blk chamber" id="wChamber" aria-label="Bench setup">
       <svg class="illu" viewBox="0 0 240 132" role="img"
            aria-label="Line drawing: sealed container with food sample, rising vapour, MQ-3 probe in the neck">
         <rect class="ln" x="78" y="14" width="84" height="17" rx="6"/>
@@ -438,7 +610,7 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
     </section>
 
     <!-- 7 · calibration -->
-    <section class="blk panel calib">
+    <section class="blk panel calib" id="wCalib">
       <div class="shead"><h2>Calibration</h2></div>
       <p class="rule">floor &lt; warning &lt; discard &lt; ceiling — ADC counts, 0–4095.</p>
       <div class="fields">
@@ -457,6 +629,10 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
     </section>
 
   </main>
+
+  <!-- Custom mode: a drag-and-resize board. Panels are moved here from the
+       bento above at runtime (see the board section of the script). -->
+  <div class="board" id="board"></div>
 
   <footer>
     <span>Ripe FR‑1 · firmware 1.4.0 · polls <code>/data</code> every <span id="footMs">2,000</span> ms</span>
@@ -477,8 +653,20 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
         <div class="seg" id="segMode" role="radiogroup" aria-label="Dashboard detail">
           <button type="button" data-v="basic" role="radio">Basic</button>
           <button type="button" data-v="advanced" role="radio">Advanced</button>
+          <button type="button" data-v="custom" role="radio">Custom</button>
         </div>
         <p class="hint" id="modeHint">Basic hides the numbers — just says whether the food is spoiled.</p>
+      </div>
+
+      <div class="grp" id="customGrp">
+        <h3>Custom dashboard</h3>
+        <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> above to use the board. Turn on <strong>Edit layout</strong>, then drag panels by their top and resize from the bottom-right corner.</p>
+        <div class="actions">
+          <button class="btn-quiet" id="editLayoutBtn" type="button">Edit layout</button>
+          <button class="btn-text" id="resetLayoutBtn" type="button">Reset layout</button>
+          <button class="btn-text" id="clearLayoutBtn" type="button">Clear board</button>
+        </div>
+        <div class="tray" id="widgetTray" style="margin-top:12px"></div>
       </div>
 
       <div class="grp">
@@ -487,13 +675,55 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
           <button type="button" data-v="light" role="radio">Light</button>
           <button type="button" data-v="dark" role="radio">Dark</button>
           <button type="button" data-v="system" role="radio">System</button>
+          <button type="button" data-v="custom" role="radio">Custom</button>
         </div>
         <p class="hint">Saved in this browser only — the ESP32 stores no theme data.</p>
         <div class="seg" id="segFont" role="radiogroup" aria-label="Typeface" style="margin-top:12px">
           <button type="button" data-v="grotesk" role="radio">Grotesk</button>
           <button type="button" data-v="editorial" role="radio">Editorial</button>
+          <button type="button" data-v="custom" role="radio">Custom…</button>
         </div>
         <p class="hint" id="fontHint">Grotesk: Space Grotesk + Urbanist.</p>
+        <div id="fontCustomGrp" hidden style="margin-top:12px">
+          <div class="fields">
+            <div class="field"><label for="inFHead">Headings font</label>
+              <input type="text" id="inFHead" placeholder="Poppins" spellcheck="false" autocomplete="off"></div>
+            <div class="field"><label for="inFBody">Body font</label>
+              <input type="text" id="inFBody" placeholder="Inter" spellcheck="false" autocomplete="off"></div>
+          </div>
+          <p class="hint" style="margin-top:10px">Any family from <strong>fonts.google.com</strong> — e.g. “Poppins”, “DM Sans”, “Playfair Display”. Loaded live from Google Fonts and shared with your signed-in devices.</p>
+          <div class="actions"><button class="btn-quiet" id="fontLoadBtn" type="button">Load fonts</button>
+            <button class="btn-text" id="fontResetBtn" type="button">Reset to Grotesk</button>
+            <span class="msg" id="fontMsg" aria-live="polite"></span></div>
+        </div>
+      </div>
+
+      <div class="grp" id="colorGrp">
+        <h3>Colours — custom theme</h3>
+        <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> under Appearance to use these. Each field accepts <code>#rrggbb</code>, <code>#rgb</code> or <code>rgba(r,g,b,a)</code>.</p>
+        <div class="seg" id="segPreset" role="radiogroup" aria-label="Colour preset">
+          <button type="button" data-v="ripe">Ripe</button>
+          <button type="button" data-v="midnight">Midnight</button>
+          <button type="button" data-v="paper">Paper</button>
+          <button type="button" data-v="contrast">High contrast</button>
+        </div>
+        <button class="disclosure" id="colToggle" type="button" aria-expanded="false" aria-controls="colBody">
+          <span class="dcaret" aria-hidden="true">▸</span> Customise each colour
+        </button>
+        <div id="colBody" hidden>
+          <div class="colgrid" id="colGrid"></div>
+          <div class="actions"><button class="btn-text" id="colReset" type="button">Reset all colours</button>
+            <span class="msg" id="colMsg" aria-live="polite"></span></div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <h3>Motion</h3>
+        <div class="seg" id="segAnim" role="radiogroup" aria-label="Animations">
+          <button type="button" data-v="on" role="radio">Animated</button>
+          <button type="button" data-v="off" role="radio">Reduce motion</button>
+        </div>
+        <p class="hint" id="animHint">Panels rise in, figures count up and the theme cross-fades.</p>
       </div>
 
       <div class="grp">
@@ -544,17 +774,13 @@ footer code{font-family:var(--font-disp);font-size:12px;background:var(--panel);
       <div class="grp" id="acctGrp">
         <h3>Account</h3>
         <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in to share readings and settings across your devices.</p>
-        <div class="fields" id="acctFields">
-          <div class="field"><label for="acctEmail">Email</label>
-            <input type="email" id="acctEmail" placeholder="you@example.com" autocomplete="email" spellcheck="false"></div>
-          <div class="field"><label for="acctPass">Password</label>
-            <input type="password" id="acctPass" placeholder="at least 6 characters" autocomplete="current-password"></div>
+        <div class="fields" id="acctNameRow">
+          <div class="field"><label for="inName">Display name</label>
+            <input type="text" id="inName" placeholder="Your name" autocomplete="nickname" spellcheck="false"></div>
         </div>
+        <p class="hint" style="margin-top:8px">Used for the greeting. Google sign-in fills this in automatically.</p>
         <div class="actions" style="margin-top:12px">
-          <button class="btn-primary" id="acctSignIn" type="button">Sign in</button>
-          <button class="btn-quiet" id="acctCreate" type="button">Create account</button>
-          <button class="btn-quiet" id="signInBtn" type="button">Use Google instead</button>
-          <button class="btn-quiet" id="signOutBtn" type="button" hidden>Sign out</button>
+          <button class="btn-primary" id="acctManage" type="button">Sign in / Manage account</button>
           <span class="msg" id="acctMsg" aria-live="polite"></span>
         </div>
       </div>
@@ -602,22 +828,31 @@ var SUGGESTED={warn:1600,spoiled:2600,floor:1000,ceil:3800};
 var PREF_KEY='ripe.settings';
 var PREF_DEFAULTS={theme:'system',font:'grotesk',mode:'advanced',
                    source:'mock',transport:'proxy',sync:'off',
-                   host:'192.168.1.57',port:80,pollMs:2000};
+                   host:'192.168.1.57',port:80,pollMs:2000,
+                   anim:'on',name:'',fHead:'',fBody:'',entered:false,
+                   colors:{},layout:[],layoutInit:false};
 function loadPrefs(){
-  var o={},k;
-  for(k in PREF_DEFAULTS){o[k]=PREF_DEFAULTS[k];}
+  var o=JSON.parse(JSON.stringify(PREF_DEFAULTS)),k;
   try{
     var p=JSON.parse(localStorage.getItem(PREF_KEY)||'{}');
-    for(k in p){if((k in o)&&p[k]!==null&&p[k]!==''){o[k]=p[k];}}
+    for(k in p){if(k in o){o[k]=p[k];}}
   }catch(e){}
   o.port=clamp(parseInt(o.port,10)||80,1,65535);
   o.pollMs=[1000,2000,5000].indexOf(parseInt(o.pollMs,10))>=0?parseInt(o.pollMs,10):2000;
   if(o.source!=='mock'&&o.source!=='esp32'&&o.source!=='ble'){o.source='mock';}
   if(o.transport!=='proxy'&&o.transport!=='direct'){o.transport='proxy';}
-  if(o.theme!=='light'&&o.theme!=='dark'&&o.theme!=='system'){o.theme='system';}
-  if(o.font!=='grotesk'&&o.font!=='editorial'){o.font='grotesk';}
-  if(o.mode!=='basic'&&o.mode!=='advanced'){o.mode='advanced';}
+  if(o.theme!=='light'&&o.theme!=='dark'&&o.theme!=='system'&&o.theme!=='custom'){o.theme='system';}
+  if(o.font!=='grotesk'&&o.font!=='editorial'&&o.font!=='custom'){o.font='grotesk';}
+  if(o.mode!=='basic'&&o.mode!=='advanced'&&o.mode!=='custom'){o.mode='advanced';}
   if(o.sync!=='off'&&o.sync!=='publish'&&o.sync!=='follow'){o.sync='off';}
+  if(o.anim!=='on'&&o.anim!=='off'){o.anim='on';}
+  if(typeof o.name!=='string'){o.name='';}
+  if(typeof o.fHead!=='string'){o.fHead='';}
+  if(typeof o.fBody!=='string'){o.fBody='';}
+  o.entered=!!o.entered;
+  o.layoutInit=!!o.layoutInit;
+  if(!o.colors||typeof o.colors!=='object'||Array.isArray(o.colors)){o.colors={};}
+  if(!Array.isArray(o.layout)){o.layout=[];}
   return o;
 }
 function savePrefs(){try{localStorage.setItem(PREF_KEY,JSON.stringify(state.prefs));}catch(e){}}
@@ -650,24 +885,140 @@ var state={
 };
 
 /* ----------------------------------------------------------------- theme -- */
+/* v1.1.0: a "custom" theme whose palette overrides light *and* dark, a live
+   Google-Fonts loader, a motion toggle and count-up figures. */
+var FONT_FB_D="'Space Grotesk','Urbanist',sans-serif";
+var FONT_FB_U="'Urbanist',-apple-system,'Segoe UI',sans-serif";
+var COLOR_TOKENS=[
+  {key:'bg',label:'Page background'},{key:'panel',label:'Panel'},
+  {key:'panel-hi',label:'Panel highlight'},{key:'sunken',label:'Sunken / track'},
+  {key:'ink',label:'Text'},{key:'ink-2',label:'Text secondary'},
+  {key:'muted',label:'Muted text'},{key:'hair',label:'Hairline / border'},
+  {key:'accent',label:'Accent'},{key:'accent-deep',label:'Accent (deep)'},
+  {key:'on-accent',label:'On accent'},{key:'fresh',label:'Fresh'},
+  {key:'spoiled',label:'Spoiled'},{key:'tint-fresh',label:'Fresh tint'},
+  {key:'tint-warn',label:'Warning tint'},{key:'tint-bad',label:'Spoiled tint'},
+  {key:'display-bg',label:'Display background'},{key:'dark-ink',label:'Display text'},
+  {key:'dark-muted',label:'Display muted'},{key:'dark-track',label:'Display track'},
+  {key:'fresh-lit',label:'Fresh (lit)'},{key:'spoiled-lit',label:'Spoiled (lit)'}];
+var COLOR_DEFAULT={bg:'#e8e4db',panel:'#f5f2eb','panel-hi':'#fcfbf7',sunken:'#ddd7ca',
+  ink:'#23211d','ink-2':'#4b4740',muted:'#837c6f',hair:'#cfc8ba',accent:'#edb100',
+  'accent-deep':'#8a6400','on-accent':'#1c1a16',fresh:'#4c7a4d',spoiled:'#b23a25',
+  'tint-fresh':'#e6ece1','tint-warn':'#f7ecd2','tint-bad':'#f1ded7','display-bg':'#23211d',
+  'dark-ink':'#f2eee5','dark-muted':'#9a948a','dark-track':'#3a362f',
+  'fresh-lit':'#79a878','spoiled-lit':'#d86a4f'};
+var COLOR_PRESETS={
+  ripe:null,
+  midnight:{bg:'#14161a',panel:'#1b1e24','panel-hi':'#232830',sunken:'#2b313a',ink:'#eef1f6',
+    'ink-2':'#c3cad6',muted:'#8b94a3',hair:'#333a45',accent:'#ffc24d','accent-deep':'#c9902a',
+    'on-accent':'#14161a',fresh:'#7bd18b',spoiled:'#ff7a6b','tint-fresh':'#1b2a20',
+    'tint-warn':'#2c2718','tint-bad':'#2e1c1a','display-bg':'#0f1115','dark-ink':'#eef1f6',
+    'dark-muted':'#9aa3b2','dark-track':'#2a303a','fresh-lit':'#7bd18b','spoiled-lit':'#ff7a6b'},
+  paper:{bg:'#f2efe6',panel:'#faf8f2','panel-hi':'#ffffff',sunken:'#e6e1d5',ink:'#2a2823',
+    'ink-2':'#55514a',muted:'#8c867a',hair:'#d8d2c4',accent:'#c8892b','accent-deep':'#8a5e14',
+    'on-accent':'#1c1a16',fresh:'#4c7a4d',spoiled:'#b23a25','tint-fresh':'#e9eee4',
+    'tint-warn':'#f6efdf','tint-bad':'#f2e1da','display-bg':'#2a2823','dark-ink':'#f2eee5',
+    'dark-muted':'#9a948a','dark-track':'#3a362f','fresh-lit':'#79a878','spoiled-lit':'#d86a4f'},
+  contrast:{bg:'#000000',panel:'#0b0b0b','panel-hi':'#161616',sunken:'#242424',ink:'#ffffff',
+    'ink-2':'#f0f0f0',muted:'#b9b9b9',hair:'#ffffff',accent:'#ffe000','accent-deep':'#ffe000',
+    'on-accent':'#000000',fresh:'#00ff66',spoiled:'#ff3b30','tint-fresh':'#00331a',
+    'tint-warn':'#332b00','tint-bad':'#330d0a','display-bg':'#000000','dark-ink':'#ffffff',
+    'dark-muted':'#c9c9c9','dark-track':'#3a3a3a','fresh-lit':'#00ff66','spoiled-lit':'#ff3b30'}};
+function parseCssColor(s){
+  if(!s){return null;}
+  s=String(s).trim();var m;
+  if((m=/^#([0-9a-f]{3})$/i.exec(s))){
+    return {r:parseInt(m[1][0]+m[1][0],16),g:parseInt(m[1][1]+m[1][1],16),b:parseInt(m[1][2]+m[1][2],16),a:1};
+  }
+  if((m=/^#([0-9a-f]{6})$/i.exec(s))){
+    return {r:parseInt(m[1].slice(0,2),16),g:parseInt(m[1].slice(2,4),16),b:parseInt(m[1].slice(4,6),16),a:1};
+  }
+  if((m=/^#([0-9a-f]{8})$/i.exec(s))){
+    return {r:parseInt(m[1].slice(0,2),16),g:parseInt(m[1].slice(2,4),16),b:parseInt(m[1].slice(4,6),16),a:parseInt(m[1].slice(6,8),16)/255};
+  }
+  if((m=/^rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*(?:,\s*([0-9.]+)\s*)?\)$/i.exec(s))){
+    return {r:clamp(Math.round(parseFloat(m[1])),0,255),g:clamp(Math.round(parseFloat(m[2])),0,255),
+      b:clamp(Math.round(parseFloat(m[3])),0,255),a:(m[4]===undefined?1:clamp(parseFloat(m[4]),0,1))};
+  }
+  return null;
+}
+function toHex(c){var f=function(n){return ('0'+clamp(Math.round(n),0,255).toString(16)).slice(-2);};
+  return '#'+f(c.r)+f(c.g)+f(c.b);}
+function luminanceOf(s){var c=parseCssColor(s);if(!c){return 1;}
+  return (0.2126*c.r+0.7152*c.g+0.0722*c.b)/255;}
 function currentTheme(){
+  if(state.prefs.theme==='custom'){return 'custom';}
   if(state.prefs.theme==='system'){
     return (window.matchMedia&&
       window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';
   }
   return state.prefs.theme;
 }
+function isDarkUi(){
+  if(currentTheme()==='custom'){
+    return luminanceOf(state.prefs.colors.bg||COLOR_DEFAULT.bg)<0.5;
+  }
+  return currentTheme()==='dark';
+}
+function applyCustomColors(){
+  var root=document.documentElement,c=state.prefs.colors||{},i,k;
+  for(i=0;i<COLOR_TOKENS.length;i++){k=COLOR_TOKENS[i].key;
+    if(c[k]){root.style.setProperty('--'+k,c[k]);}else{root.style.removeProperty('--'+k);}}
+}
+function clearCustomColors(){
+  var root=document.documentElement,i;
+  for(i=0;i<COLOR_TOKENS.length;i++){root.style.removeProperty('--'+COLOR_TOKENS[i].key);}
+}
 function applyTheme(){
-  var dark=currentTheme()==='dark';
-  document.documentElement.setAttribute('data-theme',dark?'dark':'light');
+  var t=currentTheme();
+  if(t==='custom'){applyCustomColors();}else{clearCustomColors();}
+  document.documentElement.setAttribute('data-theme',t==='custom'?'custom':t);
   var mc=$('themeColor');
-  if(mc){mc.setAttribute('content',dark?'#1b1815':'#e8e4db');}
+  if(mc){mc.setAttribute('content',isDarkUi()?'#1b1815':'#e8e4db');}
   drawSpark();
 }
+function gfamily(n){return encodeURIComponent(String(n).trim()).replace(/%20/g,'+');}
+function loadGoogleFonts(h,b){
+  var fam=[],names=[h,b],i,link;
+  for(i=0;i<2;i++){if(names[i]){fam.push('family='+gfamily(names[i])+':wght@400;500;600;700');}}
+  link=$('gfLink');
+  if(!fam.length){if(link&&link.parentNode){link.parentNode.removeChild(link);}return;}
+  var href='https://fonts.googleapis.com/css2?'+fam.join('&')+'&display=swap';
+  if(!link){link=document.createElement('link');link.rel='stylesheet';link.id='gfLink';document.head.appendChild(link);}
+  if(link.getAttribute('href')!==href){link.setAttribute('href',href);}
+}
 function applyFont(){
+  var f=state.prefs.font,root=document.documentElement;
+  var h=(''+(state.prefs.fHead||'')).trim(),b=(''+(state.prefs.fBody||'')).trim();
   document.documentElement.setAttribute('data-font',
-    state.prefs.font==='editorial'?'editorial':'grotesk');
+    f==='editorial'?'editorial':(f==='custom'?'custom':'grotesk'));
+  if(f==='custom'){
+    root.style.setProperty('--font-disp',(h?"'"+h+"',":"")+FONT_FB_D);
+    root.style.setProperty('--font-ui',(b?"'"+b+"',":"")+FONT_FB_U);
+    loadGoogleFonts(h,b);
+  }else{
+    root.style.removeProperty('--font-disp');
+    root.style.removeProperty('--font-ui');
+    loadGoogleFonts('','');
+  }
   drawSpark();
+}
+function applyAnim(){
+  document.documentElement.setAttribute('data-anim',state.prefs.anim==='off'?'off':'on');
+}
+/* count-up for the big figures — skipped when motion is reduced or the jump is huge */
+function animateNum(el,to){
+  if(!el){return;}
+  var from=parseInt(String(el.textContent||'').replace(/[^0-9-]/g,''),10);
+  if(!isFinite(from)){from=to;}
+  if(state.prefs.anim==='off'||from===to||Math.abs(to-from)>2500){el.textContent=fmt(to);return;}
+  var t0=performance.now(),dur=520;
+  function step(t){
+    var k=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-k,3);
+    el.textContent=fmt(Math.round(from+(to-from)*e));
+    if(k<1){requestAnimationFrame(step);}
+  }
+  requestAnimationFrame(step);
 }
 /* plain-language sentence for Basic mode — no numbers, no jargon */
 function plainText(s){
@@ -677,11 +1028,13 @@ function plainText(s){
   return 'Waiting for the first sample…';
 }
 function applyMode(){
+  var m=state.prefs.mode;
   document.documentElement.setAttribute('data-mode',
-    state.prefs.mode==='basic'?'basic':'advanced');
+    (m==='basic')?'basic':(m==='custom'?'custom':'advanced'));
   var h=$('verdictHint');
-  if(state.prefs.mode==='basic'){h.textContent=plainText(state.status||'WAITING');}
+  if(m==='basic'){h.textContent=plainText(state.status||'WAITING');}
   else if(state.last){h.textContent=hintText(state.last);}
+  if(m==='custom'){enterBoard();}else{exitBoard();}
 }
 
 /* ------------------------------------------------------------- polling ---- */
@@ -798,9 +1151,9 @@ function pollHTTP(){
 function applyData(d){
   if(!d||typeof d.raw!=='number'){return;}
   state.last=d;
-  $('rawNow').textContent=fmt(d.raw);
   $('rawInst').textContent=fmt(d.raw);
-  $('rawAvg').textContent=fmt(d.avg);
+  animateNum($('rawNow'),d.raw);
+  animateNum($('rawAvg'),d.avg);
   $('stamp').textContent='last sample '+(d.t||logTime());
 
   var p=pctFor(d.avg,d.cal_floor,d.cal_ceil);
@@ -855,7 +1208,7 @@ function applyData(d){
 function drawSpark(){
   var c=$('spark');if(!c){return;}
   var w=c.clientWidth,h=150;if(w<=0){return;}
-  var dark=document.documentElement.getAttribute('data-theme')==='dark';
+  var dark=isDarkUi();
   var grid=dark?'rgba(242,238,229,.10)':'rgba(35,33,29,.10)';
   var line=dark?'#c9c2b3':'#3a362f';
   var area=dark?'rgba(242,238,229,.07)':'rgba(35,33,29,.07)';
@@ -1108,7 +1461,7 @@ function setAcct(t,bad){var m=$('acctMsg');if(!m){return;}m.textContent=t||'';m.
 var cloudPromise=null;
 function loadCloud(){
   if(cloudPromise){return cloudPromise;}
-  cloudPromise=import('./firebase.js?v=3').then(function(mod){
+  cloudPromise=import('./firebase.js?v=4').then(function(mod){
     state.cloud.mod=mod;
     mod.onUser(function(u){onCloudUser(u);});
     return mod;
@@ -1124,6 +1477,10 @@ function onCloudUser(u){
     if(u){localStorage.setItem('ripe.cloud','1');}
     else{localStorage.removeItem('ripe.cloud');}
   }catch(e){}
+  /* The start page is the first page whenever nobody is signed in. A guest
+     who chose to continue keeps the dashboard until sign-out or reload. */
+  if(u){state.cloud.guest=false;enterDash();}
+  else if(!state.cloud.guest){state.prefs.entered=false;savePrefs();updateAccountUI();showAuth();}
   startPrefsSync();     /* settings follow the account, whatever the sync mode */
   applyCloud();
 }
@@ -1145,24 +1502,29 @@ function acctError(e){
     default:return (e&&e.message)?e.message:'Sign-in failed.';
   }
 }
-function acctCreds(){
-  return {e:($('acctEmail').value||'').trim(),p:($('acctPass').value||'')};
-}
 function updateAccountUI(){
-  var out=$('acctOut');if(!out){return;}
-  var u=state.cloud.user;
-  var f=$('acctFields');
-  if(u){
-    out.textContent='Signed in as '+(u.email||u.displayName||u.uid)+' — readings and settings are shared with every device on this account.';
-    if(f){f.hidden=true;}
-    $('acctSignIn').hidden=true;$('acctCreate').hidden=true;
-    $('signInBtn').hidden=true;$('signOutBtn').hidden=false;
-  }else{
-    out.textContent='Not signed in — sign in to share readings and settings across your devices.';
-    if(f){f.hidden=false;}
-    $('acctSignIn').hidden=false;$('acctCreate').hidden=false;
-    $('signInBtn').hidden=false;$('signOutBtn').hidden=true;
+  var out=$('acctOut'),u=state.cloud.user;
+  if(out){out.textContent=u?('Signed in as '+(u.email||u.displayName||u.uid)+
+    ' — readings and settings are shared with every device on this account.')
+    :'Not signed in — sign in to share readings and settings across your devices.';}
+  var am=$('acctManage');
+  if(am){am.textContent=u?'Manage account / sign out':'Sign in / Manage account';}
+  var ab=$('acctBtn');
+  if(ab){ab.hidden=!state.prefs.entered;}
+  var ga=$('greetAcct');
+  if(ga){ga.hidden=true;}
+  var fn=$('inName');
+  if(fn){
+    if(u){
+      // Signed in: the display name can be changed (works for Google and email).
+      fn.disabled=false;fn.placeholder='Your name';
+      if(document.activeElement!==fn){fn.value=state.prefs.name||'';}
+    }else{
+      // Guest: read-only, always shown as "Guest".
+      fn.disabled=true;fn.value='Guest';
+    }
   }
+  updateAuthUI();
 }
 function updateCloudFoot(){
   var el=$('footCloud');if(!el){return;}
@@ -1275,11 +1637,13 @@ function cloudMaybePublish(d){
    browser stay identical. Device-specific choices (data source, ESP32 address,
    publish/follow) are NOT shared — a phone on BLE and a browser on the mock
    server could never agree on those. */
-var CLOUD_PREF_KEYS=['theme','font','mode','pollMs'];
+var CLOUD_PREF_KEYS=['theme','font','mode','pollMs','anim','name','fHead','fBody','colors','layout'];
 function cloudReady(){return !!state.cloud.user&&!!state.cloud.mod;}
 function syncedPrefs(){
-  var o={},i;
-  for(i=0;i<CLOUD_PREF_KEYS.length;i++){o[CLOUD_PREF_KEYS[i]]=state.prefs[CLOUD_PREF_KEYS[i]];}
+  var o={},i,k;
+  for(i=0;i<CLOUD_PREF_KEYS.length;i++){k=CLOUD_PREF_KEYS[i];o[k]=state.prefs[k];}
+  o.colors=state.prefs.colors||{};
+  o.layout=state.prefs.layout||[];
   return o;
 }
 function pushPrefsNow(){
@@ -1287,18 +1651,25 @@ function pushPrefsNow(){
   state.cloud.mod.pushPrefs(state.cloud.user.uid,syncedPrefs()).catch(function(){});
 }
 function applyRemotePrefs(p){
-  var q=state.prefs,changed=false,i,k;
+  var q=state.prefs,changed=false,i,k,v;
   for(i=0;i<CLOUD_PREF_KEYS.length;i++){
-    k=CLOUD_PREF_KEYS[i];
-    if(p[k]!==undefined&&p[k]!==null&&p[k]!==q[k]){q[k]=p[k];changed=true;}
+    k=CLOUD_PREF_KEYS[i];v=p[k];
+    if(v===undefined||v===null){continue;}
+    if(k==='colors'||k==='layout'){
+      if(JSON.stringify(v)!==JSON.stringify(q[k])){q[k]=v;changed=true;}
+    }else if(v!==q[k]){q[k]=v;changed=true;}
   }
   if(!changed){return;}
   q.pollMs=[1000,2000,5000].indexOf(parseInt(q.pollMs,10))>=0?parseInt(q.pollMs,10):2000;
-  if(q.theme!=='light'&&q.theme!=='dark'&&q.theme!=='system'){q.theme='system';}
-  if(q.font!=='grotesk'&&q.font!=='editorial'){q.font='grotesk';}
-  if(q.mode!=='basic'&&q.mode!=='advanced'){q.mode='advanced';}
+  if(q.theme!=='light'&&q.theme!=='dark'&&q.theme!=='system'&&q.theme!=='custom'){q.theme='system';}
+  if(q.font!=='grotesk'&&q.font!=='editorial'&&q.font!=='custom'){q.font='grotesk';}
+  if(q.mode!=='basic'&&q.mode!=='advanced'&&q.mode!=='custom'){q.mode='advanced';}
+  if(q.anim!=='on'&&q.anim!=='off'){q.anim='on';}
+  if(!q.colors||typeof q.colors!=='object'||Array.isArray(q.colors)){q.colors={};}
+  if(!Array.isArray(q.layout)){q.layout=[];}
   savePrefs();
-  applyTheme();applyFont();applyMode();startPolling();syncSettingsForm();
+  applyTheme();applyFont();applyAnim();applyMode();startPolling();
+  syncSettingsForm();buildColorGrid();updateGreeting();
   setAcct('Synced from another device.',false);
 }
 function startPrefsSync(){
@@ -1312,6 +1683,295 @@ function startPrefsSync(){
     }
     applyRemotePrefs(p);
   },function(){});
+}
+
+/* ================================================================= v1.1.0 ==
+   greeting · start page · colour editor · custom board                        */
+
+/* ---- greeting: plain line under the wordmark, time after the name --------- */
+var greetTimer=null;
+function greetName(){
+  var u=state.cloud.user;
+  // A guest is always just "Guest" — the name can only be set once signed in.
+  if(!u){return 'Guest';}
+  var n=(state.prefs.name||'').trim();
+  if(!n&&u.displayName){n=String(u.displayName).trim();}
+  if(!n&&u.email){n=String(u.email).split('@')[0];}
+  return n||'Guest';
+}
+function greetWord(){
+  var h=new Date().getHours();
+  if(h<12){return 'Good morning';}
+  if(h<17){return 'Good afternoon';}
+  return 'Good evening';
+}
+function updateGreeting(){
+  var g=$('greet');if(!g){return;}
+  var line=$('greetLine'),clock=$('greetClock'),sub=$('greetSub');
+  if(line){line.textContent=greetWord()+', '+greetName();}
+  var d=new Date(),p=function(n){return n<10?'0'+n:''+n;};
+  if(clock){clock.textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+  if(sub){sub.textContent=d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})+
+    ' · '+(state.cloud.user?('syncing as '+(state.cloud.user.email||greetName())):'this device only');}
+  g.hidden=false;
+}
+function startClock(){
+  updateGreeting();
+  if(greetTimer){clearInterval(greetTimer);}
+  greetTimer=setInterval(updateGreeting,1000);
+}
+
+/* ---- start / sign-in page ------------------------------------------------ */
+function authMsg(t,bad){var m=$('authMsg');if(!m){return;}m.textContent=t||'';m.className='msg'+(bad?' bad':'');}
+function authCreds(){return {e:(($('authEmail')||{}).value||'').trim(),p:(($('authPass')||{}).value||'')};}
+function updateAuthUI(){
+  var u=state.cloud.user;
+  if($('authForm')){$('authForm').hidden=!!u;}
+  if($('authAccount')){$('authAccount').hidden=!u;}
+  if(u){
+    if($('authWho')){$('authWho').textContent='Signed in as '+(u.email||u.displayName||'your account');}
+    if($('authAs')){$('authAs').textContent='Readings and look-and-feel are shared with every device on this account.';}
+  }
+  if($('authBack')){$('authBack').hidden=!state.prefs.entered;}
+  updateGreeting();
+}
+function showAuth(){
+  var a=$('auth'),m=$('authMsg');
+  if(!a){return;}
+  if(m){m.textContent='';m.className='msg';}
+  updateAuthUI();
+  a.hidden=false;
+  var e=$('authEmail');
+  if(e&&$('authForm')&&!$('authForm').hidden){try{e.focus();}catch(x){}}
+}
+function hideAuth(){var a=$('auth');if(a){a.hidden=true;}}
+function enterDash(){
+  state.prefs.entered=true;savePrefs();
+  hideAuth();
+  var ab=$('acctBtn');if(ab){ab.hidden=false;}
+}
+function openAuth(){showAuth();}
+function wireAuth(){
+  var si=$('authSignIn'),cr=$('authCreate'),go=$('authGoogle'),so=$('authSignOut'),
+      cont=$('authContinue'),gu=$('authGuest'),bk=$('authBack');
+  if(si){si.addEventListener('click',function(){
+    var c=authCreds();
+    if(!c.e||!c.p){authMsg('Enter your email and password.',true);return;}
+    authMsg('Signing in…',false);
+    loadCloud().then(function(m){return m.signInEmail(c.e,c.p);})
+      .then(function(){authMsg('Signed in.',false);enterDash();})
+      .catch(function(e){authMsg(acctError(e),true);});
+  });}
+  if(cr){cr.addEventListener('click',function(){
+    var c=authCreds();
+    if(!c.e||!c.p){authMsg('Enter an email and a password of 6+ characters.',true);return;}
+    authMsg('Creating account…',false);
+    loadCloud().then(function(m){return m.createEmail(c.e,c.p);})
+      .then(function(){authMsg('Account created — you are signed in.',false);enterDash();})
+      .catch(function(e){authMsg(acctError(e),true);});
+  });}
+  if($('authPass')){$('authPass').addEventListener('keydown',function(ev){if(ev.key==='Enter'&&si){si.click();}});}
+  if(go){go.addEventListener('click',function(){
+    authMsg('Opening Google sign-in…',false);
+    loadCloud().then(function(m){return m.signIn();})
+      .then(function(){authMsg('Signed in.',false);enterDash();})
+      .catch(function(e){authMsg(acctError(e),true);});
+  });}
+  if(so){so.addEventListener('click',function(){
+    authMsg('Signing out…',false);
+    if(state.cloud.mod&&state.cloud.mod.signOutNow){
+      var r=state.cloud.mod.signOutNow();
+      if(r&&r.then){r.then(function(){authMsg('Signed out.',false);updateAuthUI();}).catch(function(){authMsg('Signed out.',false);});}
+      else{authMsg('Signed out.',false);updateAuthUI();}
+    }else{authMsg('Signed out.',false);updateAuthUI();}
+  });}
+  if(cont){cont.addEventListener('click',enterDash);}
+  if(gu){gu.addEventListener('click',function(){state.cloud.guest=true;enterDash();});}
+  if(bk){bk.addEventListener('click',function(){hideAuth();});}
+  if($('colToggle')){$('colToggle').addEventListener('click',function(){
+    var b=$('colBody');if(!b){return;}
+    var open=b.hidden;              /* currently closed → open it */
+    b.hidden=!open;
+    this.setAttribute('aria-expanded',open?'true':'false');
+    var c=this.querySelector('.dcaret');if(c){c.textContent=open?'▾':'▸';}
+  });}
+}
+
+/* ---- colour editor ------------------------------------------------------- */
+function colMsg(t,bad){var m=$('colMsg');if(!m){return;}m.textContent=t||'';m.className='msg'+(bad?' bad':'');}
+function setColor(key,val){
+  state.prefs.colors[key]=val;
+  savePrefs();
+  if(state.prefs.theme==='custom'){applyCustomColors();}
+  pushPrefsNow();
+}
+function buildColorGrid(){
+  var grid=$('colGrid');if(!grid){return;}
+  grid.innerHTML='';
+  COLOR_TOKENS.forEach(function(t){
+    var cur=state.prefs.colors[t.key]||COLOR_DEFAULT[t.key];
+    var pc=parseCssColor(cur)||{r:0,g:0,b:0,a:1};
+    var row=document.createElement('div');row.className='colrow';
+    var lab=document.createElement('label');lab.textContent=t.label;lab.title=t.label+'  ·  --'+t.key;
+    var txt=document.createElement('input');txt.type='text';txt.value=cur;txt.spellcheck=false;txt.autocomplete='off';
+    var pick=document.createElement('input');pick.type='color';pick.value=toHex(pc);
+    pick.addEventListener('input',function(){setColor(t.key,pick.value);txt.value=pick.value;});
+    txt.addEventListener('change',function(){
+      var c=parseCssColor(txt.value);
+      if(!c){colMsg('“'+txt.value+'” is not a colour. Use #rrggbb or rgba(r,g,b,a).',true);txt.value=cur;return;}
+      setColor(t.key,txt.value.trim());pick.value=toHex(c);
+    });
+    row.appendChild(lab);row.appendChild(txt);row.appendChild(pick);
+    grid.appendChild(row);
+  });
+}
+function applyPreset(v){
+  var pre=COLOR_PRESETS[v];
+  state.prefs.colors=pre?JSON.parse(JSON.stringify(pre)):{};
+  savePrefs();applyTheme();buildColorGrid();pushPrefsNow();
+  colMsg(state.prefs.theme==='custom'?'Preset applied.':'Preset saved — pick “Custom” under Appearance to see it.',false);
+}
+
+/* ---- custom dashboard board ---------------------------------------------- */
+var BOARD_COLS=6;
+var WIDGETS=[
+  {id:'readout',el:'wReadout',label:'Live readout',def:{x:0,y:0,w:4,h:2}},
+  {id:'verdict',el:'verdict',label:'Verdict',def:{x:4,y:0,w:2,h:1}},
+  {id:'chamber',el:'wChamber',label:'Bench setup',def:{x:4,y:1,w:2,h:1}},
+  {id:'trend',el:'wTrend',label:'VOC trend',def:{x:0,y:2,w:3,h:1}},
+  {id:'log',el:'wLog',label:'Status history',def:{x:3,y:2,w:3,h:1}},
+  {id:'device',el:'wDevice',label:'Device',def:{x:0,y:3,w:2,h:1}},
+  {id:'calib',el:'wCalib',label:'Calibration',def:{x:2,y:3,w:4,h:1}}
+];
+function widgetById(id){for(var i=0;i<WIDGETS.length;i++){if(WIDGETS[i].id===id){return WIDGETS[i];}}return null;}
+/* Keep direct references: once a panel is moved onto the board, clearing the
+   board detaches it, and getElementById can no longer find it. */
+var WIDGET_EL={};
+function cacheWidgetEls(){for(var i=0;i<WIDGETS.length;i++){WIDGET_EL[WIDGETS[i].id]=$(WIDGETS[i].el);}}
+function defaultLayout(){return WIDGETS.map(function(w){return {id:w.id,x:w.def.x,y:w.def.y,w:w.def.w,h:w.def.h};});}
+function boardOn(){return state.prefs.mode==='custom';}
+function enterBoard(){
+  if(!$('board')){return;}
+  if(!state.prefs.layoutInit){state.prefs.layout=defaultLayout();state.prefs.layoutInit=true;savePrefs();}
+  renderBoard();
+  renderTray();
+}
+function exitBoard(){
+  var board=$('board'),bento=document.querySelector('.bento');
+  if(!board||!bento){return;}
+  board.innerHTML='';
+  WIDGETS.forEach(function(w){var el=WIDGET_EL[w.id];if(el&&el.parentNode!==bento){bento.appendChild(el);
+    el.style.gridColumn='';el.style.gridRow='';el.onpointerdown=null;
+    var h=el.querySelectorAll('.bhandle,.bclose');
+    Array.prototype.forEach.call(h,function(n){n.parentNode.removeChild(n);});}});
+}
+function addHandles(el,it){
+  var old=el.querySelectorAll('.bhandle,.bclose');
+  Array.prototype.forEach.call(old,function(n){n.parentNode.removeChild(n);});
+  if(!state.boardEdit){return;}
+  var close=document.createElement('button');close.type='button';close.className='bclose';close.textContent='×';
+  close.title='Remove from board';close.setAttribute('aria-label','Remove '+it.id);
+  close.addEventListener('pointerdown',function(e){e.stopPropagation();});
+  close.addEventListener('click',function(e){e.stopPropagation();removeWidget(it.id);});
+  var h=document.createElement('button');h.type='button';h.className='bhandle';h.textContent='⤡';
+  h.title='Drag to resize';h.setAttribute('aria-label','Resize '+it.id);
+  h.addEventListener('pointerdown',function(e){e.stopPropagation();startResize(e,el,it);});
+  el.appendChild(close);el.appendChild(h);
+}
+function renderBoard(){
+  if(!boardOn()){return;}
+  var board=$('board');if(!board){return;}
+  board.classList.toggle('editing',!!state.boardEdit);
+  board.innerHTML='';
+  state.prefs.layout.forEach(function(it){
+    var el=WIDGET_EL[it.id];if(!el){return;}
+    el.style.gridColumn=(it.x+1)+' / span '+it.w;
+    el.style.gridRow=(it.y+1)+' / span '+it.h;
+    el.onpointerdown=function(e){boardPointerDown(e,el,it);};
+    board.appendChild(el);
+    addHandles(el,it);
+  });
+}
+function renderTray(){
+  var tray=$('widgetTray');if(!tray){return;}
+  tray.innerHTML='';
+  var placed={};state.prefs.layout.forEach(function(it){placed[it.id]=1;});
+  WIDGETS.forEach(function(w){
+    if(placed[w.id]){return;}
+    var b=document.createElement('button');b.type='button';b.textContent='+ '+w.label;
+    b.addEventListener('click',function(){addWidget(w.id);});
+    tray.appendChild(b);
+  });
+}
+function addWidget(id){
+  var w=widgetById(id);if(!w){return;}
+  var maxY=0;state.prefs.layout.forEach(function(it){maxY=Math.max(maxY,it.y+it.h);});
+  state.prefs.layout.push({id:id,x:0,y:maxY,w:Math.min(w.def.w,BOARD_COLS),h:w.def.h});
+  savePrefs();renderBoard();renderTray();pushPrefsNow();
+}
+function removeWidget(id){
+  state.prefs.layout=state.prefs.layout.filter(function(it){return it.id!==id;});
+  savePrefs();renderBoard();renderTray();pushPrefsNow();
+}
+function boardGeom(board){
+  var cs=getComputedStyle(board);
+  var cols=(cs.gridTemplateColumns||'').trim().split(/\s+/).length||BOARD_COLS;
+  if(cols<1){cols=BOARD_COLS;}
+  var gap=parseFloat(cs.columnGap||cs.gap)||14;
+  var rowH=parseFloat(cs.gridAutoRows)||84;
+  var cw=(board.clientWidth-gap*(cols-1))/cols;
+  return {cols:cols,gap:gap,rowH:rowH,cw:cw};
+}
+function cellAt(board,g,cx,cy){
+  var r=board.getBoundingClientRect();
+  var x=cx-r.left+board.scrollLeft,y=cy-r.top+board.scrollTop;
+  var c=Math.floor(x/(g.cw+g.gap)),rr=Math.floor(y/(g.rowH+g.gap));
+  return {c:clamp(c,0,g.cols-1),r:Math.max(0,rr)};
+}
+function boardPointerDown(ev,el,it){
+  if(!state.boardEdit){return;}
+  var t=ev.target;
+  if(t&&t.closest&&t.closest('input,button,select,textarea,a,.bhandle,.bclose')){return;}
+  startMove(ev,el,it);
+}
+function startMove(ev,el,it){
+  ev.preventDefault();
+  var board=$('board'),g=boardGeom(board);
+  var start=cellAt(board,g,ev.clientX,ev.clientY);
+  var ox=it.x-start.c,oy=it.y-start.r,moved=false;
+  el.classList.add('dragging');
+  try{el.setPointerCapture(ev.pointerId);}catch(e){}
+  function mv(e){
+    var s=cellAt(board,g,e.clientX,e.clientY);
+    var nx=clamp(s.c+ox,0,g.cols-it.w),ny=Math.max(0,s.r+oy);
+    if(nx!==it.x||ny!==it.y){it.x=nx;it.y=ny;moved=true;
+      el.style.gridColumn=(it.x+1)+' / span '+it.w;el.style.gridRow=(it.y+1)+' / span '+it.h;}
+  }
+  function up(){
+    el.classList.remove('dragging');
+    el.removeEventListener('pointermove',mv);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',up);
+    if(moved){savePrefs();pushPrefsNow();}
+  }
+  el.addEventListener('pointermove',mv);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
+}
+function startResize(ev,el,it){
+  ev.preventDefault();ev.stopPropagation();
+  var board=$('board'),g=boardGeom(board);
+  var sx=ev.clientX,sy=ev.clientY,sw=it.w,sh=it.h;
+  el.classList.add('resizing');
+  try{el.setPointerCapture(ev.pointerId);}catch(e){}
+  function mv(e){
+    var nw=clamp(sw+Math.round((e.clientX-sx)/(g.cw+g.gap)),1,g.cols-it.x);
+    var nh=clamp(sh+Math.round((e.clientY-sy)/(g.rowH+g.gap)),1,6);
+    if(nw!==it.w||nh!==it.h){it.w=nw;it.h=nh;
+      el.style.gridColumn=(it.x+1)+' / span '+it.w;el.style.gridRow=(it.y+1)+' / span '+it.h;}
+  }
+  function up(){
+    el.classList.remove('resizing');
+    el.removeEventListener('pointermove',mv);el.removeEventListener('pointerup',up);el.removeEventListener('pointercancel',up);
+    savePrefs();pushPrefsNow();
+  }
+  el.addEventListener('pointermove',mv);el.addEventListener('pointerup',up);el.addEventListener('pointercancel',up);
 }
 
 /* ------------------------------------------------------------------- wire -- */
@@ -1369,6 +2029,10 @@ function readSettingsForm(){
     source:getSeg('segSource')||'mock',
     transport:getSeg('segTransport')||'proxy',
     sync:getSeg('segSync')||'off',
+    anim:getSeg('segAnim')||state.prefs.anim||'on',
+    name:($('inName')?$('inName').value:'').trim(),
+    fHead:($('inFHead')?$('inFHead').value:'').trim(),
+    fBody:($('inFBody')?$('inFBody').value:'').trim(),
     host:($('inHost').value||'').trim()||PREF_DEFAULTS.host,
     port:clamp(parseInt($('inPort').value,10)||80,1,65535),
     pollMs:parseInt(getSeg('segPoll')||'2000',10)
@@ -1380,10 +2044,15 @@ function refreshSettingsHints(){
   $('bleGrp').hidden=(p.source!=='ble');
   $('fontHint').textContent=(p.font==='editorial')
     ? 'Editorial: Merriweather for headings and figures, PT Sans for body text.'
-    : 'Grotesk: Space Grotesk for headings and figures, Urbanist for body text.';
+    : (p.font==='custom'
+      ? 'Custom: loaded live from Google Fonts and shared with your devices.'
+      : 'Grotesk: Space Grotesk for headings and figures, Urbanist for body text.');
+  $('fontCustomGrp').hidden=(p.font!=='custom');
   $('modeHint').textContent=(p.mode==='basic')
     ? 'Basic hides the numbers — just says whether the food is spoiled.'
-    : 'Advanced shows the live ADC readout, VOC trend, status history and calibration.';
+    : (p.mode==='custom'
+      ? 'Custom: your own board — add, drag and resize the panels you want.'
+      : 'Advanced shows the live ADC readout, VOC trend, status history and calibration.');
   if(p.source==='mock'){
     $('srcHint').textContent='Mock: the local server simulates the MQ‑3 (random walk + periodic spoilage event), same JSON contract as the firmware.';
   }else if(p.source==='esp32'){
@@ -1422,8 +2091,18 @@ function syncSettingsForm(){
   setSeg('segTransport',state.prefs.transport);
   setSeg('segSync',state.prefs.sync);
   setSeg('segPoll',state.prefs.pollMs);
+  setSeg('segAnim',state.prefs.anim);
   $('inHost').value=state.prefs.host;
   $('inPort').value=state.prefs.port;
+  if($('inName')){
+    $('inName').value=state.cloud.user?(state.prefs.name||''):'Guest';
+    $('inName').disabled=!state.cloud.user;
+  }
+  if($('inFHead')){$('inFHead').value=state.prefs.fHead||'';}
+  if($('inFBody')){$('inFBody').value=state.prefs.fBody||'';}
+  $('editLayoutBtn').textContent=state.boardEdit?'Done editing':'Edit layout';
+  buildColorGrid();
+  renderTray();
   refreshSettingsHints();
 }
 function openSettings(){syncSettingsForm();setMsg('');$('scrim').hidden=false;$('setClose').focus();}
@@ -1483,7 +2162,7 @@ function persistServerSettings(){
     body:JSON.stringify({host:state.prefs.host,port:state.prefs.port}),
     signal:AbortSignal.timeout(4000)}).catch(function(){});
 }
-['segMode','segTheme','segFont','segSource','segTransport','segSync','segPoll'].forEach(function(id){
+['segMode','segTheme','segFont','segSource','segTransport','segSync','segPoll','segAnim'].forEach(function(id){
   $(id).addEventListener('click',function(ev){
     var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
     setSeg(id,b.dataset.v);
@@ -1491,34 +2170,54 @@ function persistServerSettings(){
     if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();pushPrefsNow();}
     if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();pushPrefsNow();}
     if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();pushPrefsNow();}
+    if(id==='segAnim'){state.prefs.anim=b.dataset.v;savePrefs();applyAnim();pushPrefsNow();}
   });
 });
-$('acctSignIn').addEventListener('click',function(){
-  var c=acctCreds();
-  if(!c.e||!c.p){setAcct('Enter your email and password.',true);return;}
-  setAcct('Signing in…',false);
-  loadCloud().then(function(m){return m.signInEmail(c.e,c.p);})
-    .then(function(){setAcct('Signed in.',false);})
-    .catch(function(e){setAcct(acctError(e),true);});
-});
-$('acctCreate').addEventListener('click',function(){
-  var c=acctCreds();
-  if(!c.e||!c.p){setAcct('Enter an email and a password of 6+ characters.',true);return;}
-  setAcct('Creating account…',false);
-  loadCloud().then(function(m){return m.createEmail(c.e,c.p);})
-    .then(function(){setAcct('Account created — you are signed in.',false);})
-    .catch(function(e){setAcct(acctError(e),true);});
-});
-$('acctPass').addEventListener('keydown',function(ev){if(ev.key==='Enter'){$('acctSignIn').click();}});
-$('signInBtn').addEventListener('click',function(){
-  setAcct('Opening Google sign-in…',false);
-  loadCloud().then(function(mod){return mod.signIn();})
-    .then(function(){setAcct('Signed in.',false);})
-    .catch(function(e){setAcct(acctError(e),true);});
-});
-$('signOutBtn').addEventListener('click',function(){
-  if(state.cloud.mod){state.cloud.mod.signOutNow().catch(function(){});}
-});
+/* v1.1.0 controls — colour presets, custom fonts, custom board, account.
+   Sign-in / sign-out now lives on the start page itself (wireAuth()). */
+if($('segPreset')){
+  $('segPreset').addEventListener('click',function(ev){
+    var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
+    setSeg('segPreset',b.dataset.v);applyPreset(b.dataset.v);
+  });
+}
+if($('colReset')){$('colReset').addEventListener('click',function(){
+  state.prefs.colors={};savePrefs();applyTheme();buildColorGrid();pushPrefsNow();
+  colMsg('Colours reset to the Ripe defaults.',false);
+});}
+if($('fontLoadBtn')){$('fontLoadBtn').addEventListener('click',function(){
+  state.prefs.fHead=($('inFHead').value||'').trim();
+  state.prefs.fBody=($('inFBody').value||'').trim();
+  savePrefs();applyFont();pushPrefsNow();
+  var m=$('fontMsg');if(m){m.textContent='Loaded — check the headings above.';m.className='msg';}
+});}
+if($('fontResetBtn')){$('fontResetBtn').addEventListener('click',function(){
+  state.prefs.font='grotesk';state.prefs.fHead='';state.prefs.fBody='';
+  if($('inFHead')){$('inFHead').value='';}
+  if($('inFBody')){$('inFBody').value='';}
+  savePrefs();applyFont();setSeg('segFont','grotesk');refreshSettingsHints();pushPrefsNow();
+  var m=$('fontMsg');if(m){m.textContent='Back to Grotesk.';m.className='msg';}
+});}
+['inFHead','inFBody'].forEach(function(id){if($(id)){$(id).addEventListener('input',function(){
+  if(state.prefs.font!=='custom'){state.prefs.font='custom';setSeg('segFont','custom');}
+  refreshSettingsHints();
+});}});
+if($('inName')){$('inName').addEventListener('input',function(){
+  state.prefs.name=this.value.trim();savePrefs();updateGreeting();pushPrefsNow();
+});}
+if($('editLayoutBtn')){$('editLayoutBtn').addEventListener('click',function(){
+  state.boardEdit=!state.boardEdit;
+  this.textContent=state.boardEdit?'Done editing':'Edit layout';
+  if(state.prefs.mode!=='custom'){state.prefs.mode='custom';savePrefs();setSeg('segMode','custom');applyMode();refreshSettingsHints();pushPrefsNow();}
+  renderBoard();renderTray();
+});}
+if($('resetLayoutBtn')){$('resetLayoutBtn').addEventListener('click',function(){
+  state.prefs.layout=defaultLayout();savePrefs();renderBoard();renderTray();pushPrefsNow();
+});}
+if($('clearLayoutBtn')){$('clearLayoutBtn').addEventListener('click',function(){
+  state.prefs.layout=[];savePrefs();renderBoard();renderTray();pushPrefsNow();
+});}
+if($('acctManage')){$('acctManage').addEventListener('click',openAuth);}
 $('setBtn').addEventListener('click',openSettings);
 $('blePairBtn').addEventListener('click',bleConnect);
 $('setClose').addEventListener('click',closeSettings);
@@ -1567,11 +2266,25 @@ if(navigator.bluetooth){
 window.addEventListener('resize',function(){drawSpark();});
 applyTheme();
 applyFont();
+applyAnim();
+cacheWidgetEls();
 applyMode();
+buildColorGrid();
+startClock();
+wireAuth();
 startPolling();
 pollHTTP();
 updateAccountUI();
 updateCloudFoot();
+/* Start page first for anyone not signed in (GitHub-style). If this browser
+   remembers an account, let the cloud module confirm before deciding, then
+   fall back to the start page. */
+if(localStorage.getItem('ripe.cloud')==='1'){
+  hideAuth();
+  setTimeout(function(){if(!state.cloud.user&&!state.cloud.guest){showAuth();}},1200);
+}else{
+  showAuth();
+}
 if(state.prefs.sync!=='off'||localStorage.getItem('ripe.cloud')==='1'){loadCloud().catch(function(){});}
 if(isLocalHost()){initFromServer();}   /* only the local server has /server-info */
 setTimeout(function(){if(!state.online&&state.fails<3){pollHTTP();}},600);

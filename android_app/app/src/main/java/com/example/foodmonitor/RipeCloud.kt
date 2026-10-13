@@ -39,7 +39,13 @@ data class CloudPrefs(
     val theme: String?,
     val font: String?,
     val mode: String?,
-    val pollingMs: Long?
+    val pollingMs: Long?,
+    val name: String? = null,
+    val anim: String? = null,
+    val fHead: String? = null,
+    val fBody: String? = null,
+    val colors: Map<String, String> = emptyMap(),
+    val layout: List<BoardItem> = emptyList()
 )
 
 /** A snapshot pulled from Firestore — mapped to the app's [Reading]. */
@@ -214,25 +220,58 @@ object RipeCloud {
             onData(null)
             return@addSnapshotListener
         }
+        val colors = LinkedHashMap<String, String>()
+        (snap.get("colors") as? Map<*, *>)?.forEach { (k, v) ->
+            if (k is String && v is String) colors[k] = v
+        }
+        val layout = ArrayList<BoardItem>()
+        (snap.get("layout") as? List<*>)?.forEach { row ->
+            val m = row as? Map<*, *> ?: return@forEach
+            val id = m["id"] as? String ?: return@forEach
+            layout.add(
+                BoardItem(
+                    id,
+                    (m["x"] as? Number)?.toInt() ?: 0,
+                    (m["y"] as? Number)?.toInt() ?: 0,
+                    (m["w"] as? Number)?.toInt() ?: 2,
+                    (m["h"] as? Number)?.toInt() ?: 1
+                )
+            )
+        }
         onData(
             CloudPrefs(
                 theme = cap(snap.getString("theme")),
                 font = cap(snap.getString("font")),
                 mode = cap(snap.getString("mode")),
-                pollingMs = snap.getLong("pollMs")
+                pollingMs = snap.getLong("pollMs"),
+                name = snap.getString("name"),
+                anim = cap(snap.getString("anim")),
+                fHead = snap.getString("fHead"),
+                fBody = snap.getString("fBody"),
+                colors = colors,
+                layout = layout
             )
         )
     }
 
-    fun pushPrefs(uid: String, theme: String, font: String, mode: String, pollingMs: Long) {
+    fun pushPrefs(uid: String, s: RipeSettings) {
+        val rows = s.layout.map {
+            mapOf("id" to it.id, "x" to it.x, "y" to it.y, "w" to it.w, "h" to it.h)
+        }
         prefsDoc(uid).set(
             mapOf(
                 // The web stores lowercase ("dark", "editorial", "basic"); the app
                 // uses "Dark", "Editorial", "Basic" — normalise at the wire.
-                "theme" to theme.lowercase(),
-                "font" to font.lowercase(),
-                "mode" to mode.lowercase(),
-                "pollMs" to pollingMs,
+                "theme" to s.theme.lowercase(),
+                "font" to s.font.lowercase(),
+                "mode" to s.mode.lowercase(),
+                "pollMs" to s.pollingMs,
+                "anim" to s.anim.lowercase(),
+                "name" to s.name,
+                "fHead" to s.fHead,
+                "fBody" to s.fBody,
+                "colors" to s.colors,
+                "layout" to rows,
                 "updatedAt" to FieldValue.serverTimestamp()
             ),
             SetOptions.merge()

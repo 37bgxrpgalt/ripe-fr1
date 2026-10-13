@@ -132,12 +132,16 @@ export function watchPrefs(uid, cb, onErr) {
   }, function (err) { if (onErr) onErr(err); });
 }
 
+/* v1.1.0: the look-and-feel grew well past theme/font/mode — a display name,
+   motion toggle, custom Google Fonts, a full custom colour palette and the
+   Custom-mode widget layout all travel with the account too. Only keys that are
+   actually present are written, so an older client can still seed a doc. */
 export function pushPrefs(uid, p) {
-  return setDoc(docPrefs(uid), {
-    theme: p.theme,
-    font: p.font,
-    mode: p.mode,
-    pollMs: p.pollMs,
-    updatedAt: serverTimestamp()
-  }, { merge: true });
+  const out = { updatedAt: serverTimestamp() };
+  const simple = ['theme', 'font', 'mode', 'name', 'anim', 'fHead', 'fBody'];
+  simple.forEach(function (k) { if (p[k] !== undefined) out[k] = String(p[k] || ''); });
+  if (p.pollMs !== undefined) out.pollMs = p.pollMs;
+  if (p.colors !== undefined) out.colors = p.colors || {};
+  if (p.layout !== undefined) out.layout = p.layout || [];
+  return setDoc(docPrefs(uid), out, { merge: true });
 }

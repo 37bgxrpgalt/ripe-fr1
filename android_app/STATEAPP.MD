@@ -486,3 +486,33 @@ SMART FOOD Project/                     ← ESP32 + Web Root
   repo). `google-services.json`, keystores and build output are git‑ignored; a
   Gradle **wrapper 8.4** was generated so the folder opens/builds standalone. The
   APK is attached to a GitHub **Release** for other devices to download.
+
+---
+
+## ▶ Session 2026-10-12 (v1.1.0 — look & feel, sign-in page, custom board)
+Ported 1:1 from the web v1.1.0 (`web/index.html` is the UI source of truth).
+`MainActivity.kt` **compiles cleanly** with the local Gradle 8.4 wrapper + JBR 17
+(`--offline`); debug APK builds to `D:\Ripe FR-1 v1.1.0-debug.apk`. **Uncommitted**
+— no push/release until the user signs off.
+
+- **Start page**: a store-ready `RipeStartPage` (Email/Password, Create account,
+  Continue with Google, **Continue as guest**) shown **first whenever nobody is
+  signed in**; a header **Account** button reopens it. Auth controls were removed
+  from Settings.
+- **Greeting + live clock** under the "Ripe FR-1" title (plain, no card). Guest is
+  locked to "Guest" and not editable; a Google/email account's name is editable.
+- **Colours**: a third **Custom** theme overriding Light/Dark. `COLOR_TOKENS` (18,
+  keyed by the web CSS-var names) + `RipeDefaultColors` + `COLOR_PRESETS` +
+  `customPalette` + an `activePalette` Custom branch. Inputs accept `#rgb` /
+  `#rrggbb` / `rgba(...)`; the editor is **collapsed by default**.
+- **Motion** On/Off with an animated figure count-up.
+- **Custom Google Fonts** downloaded at runtime (legacy-UA CSS → TTF) and cached in
+  `cacheDir`, falling back to the bundled Grotesk.
+- **Custom dashboard**: `BoardItem` grid (6 columns) with **true drag + resize**
+  (`detectDragGestures`, overlap nudging via `resolveBoard`); widgets seeded from
+  `defaultBoardLayout()` and persisted/synced; dashboard panels **fade/rise in**
+  via `Reveal`.
+- `RipeSettings` extended with `name`, `anim`, `fHead`, `fBody`, `colors`,
+  `layout`, `layoutReady`, `entered`; `RipeCloud.CloudPrefs` / `watchPrefs` /
+  `pushPrefs` carry the new fields. Fixed a latent bug where Settings' "Save &
+  connect" rebuilt `RipeSettings` from scratch — it now uses `settings.copy(...)`.
