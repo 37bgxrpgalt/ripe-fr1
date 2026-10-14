@@ -2293,7 +2293,11 @@ function applySettingsNow(){
   var p=readSettingsForm();
   if(!p.host){p.host=PREF_DEFAULTS.host;}
   var changed=(p.source!==state.prefs.source);
-  state.prefs=p;savePrefs();
+  /* merge, do NOT replace: readSettingsForm() only carries the form fields
+     (connections, theme, font, mode...); prefs also hold pfp, colors, layout
+     and layoutInit, which must survive a connection change. */
+  for(var k in p){state.prefs[k]=p[k];}
+  savePrefs();
   persistServerSettings();
   applyTheme();applyFont();applyAnim();applyMode();startPolling();
   if(changed){resetStream();}
