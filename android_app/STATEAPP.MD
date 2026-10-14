@@ -516,3 +516,34 @@ Ported 1:1 from the web v1.1.0 (`web/index.html` is the UI source of truth).
   `layout`, `layoutReady`, `entered`; `RipeCloud.CloudPrefs` / `watchPrefs` /
   `pushPrefs` carry the new fields. Fixed a latent bug where Settings' "Save &
   connect" rebuilt `RipeSettings` from scratch — it now uses `settings.copy(...)`.
+
+---
+
+## 2026-10-14 — Settings accordion, profile picture, immediate apply (v1.1.1)
+
+- `SettingsDialog` rebuilt as an accordion — **Appearance / Settings /
+  Connections / Account / About This App** — with a `‹ Back` button; opening one
+  section collapses the others (`openSection`). A profile block (avatar / name /
+  email) is pinned at the bottom.
+- The **Save & connect** button is gone: the dialog takes `onChange` and applies
+  each change immediately (`FoodMonitorApp` passes `applySettings`, which saves
+  and pushes to the cloud at once).
+- **Profile picture**: `pfp` added to `RipeSettings`; `uriToPfpDataUrl()`
+  downscales a picked image to a 128×128 JPEG data URL; `ProfileAvatar()` draws
+  it. Picker via `ActivityResultContracts.GetContent()`; the avatar shows inline
+  in the greeting (`Good morning, (photo) name`) on both the main and custom
+  dashboards. `pfp` is carried by `CloudPrefs` / `watchPrefs` / `pushPrefs`.
+- Removed the top **Account** button from both dashboard headers (and the now
+  unused `onOpenAuth` parameters).
+- `android_app/app/build.gradle.kts`: `versionCode 2` / `versionName "1.1.1"`;
+  APK packaged at `D:\Ripe_FR-1-v1.1.1.apk`.
+
+
+---
+
+## 2026-10-14 — USB (PC) mode is web-only
+
+The browser dashboard can now read the ESP32 over a **USB serial bridge**
+(`web/usb_server.ps1`, top-level README §7 Option C). **Android is unchanged** —
+it still uses Wi-Fi / BLE / cloud. USB-OTG serial is not implemented (it would
+need a USB-host + CDC-ACM driver and a runtime permission flow).

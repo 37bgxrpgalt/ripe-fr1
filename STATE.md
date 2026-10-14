@@ -7,7 +7,9 @@ this PC the root is `D:\Webserver\` (it was moved here from the flaky `E:\`
 removable drive — see caveats). So `E:\ (or D:\)Webserver\...` means
 `E:\Webserver\...` or `D:\Webserver\...` on the relevant machine.
 
-Last updated: 2026-10-11: **Android app added to this repo** — the full Kotlin /
+Last updated: 2026-10-14: **USB (PC) mode** — the firmware now streams JSON over
+the USB cable and a new `web/usb_server.ps1` bridge serves the dashboard on a PC
+with no Wi-Fi and no Bluetooth (`USB (PC)` data source). Earlier — 2026-10-11: **Android app added to this repo** — the full Kotlin /
 Compose project now lives in `android_app/` alongside `web/` (one repo, web stays
 web, app stays app). App renamed to **Ripe FR‑1**; Google sign‑in on Android moved
 to Credential Manager. `google-services.json` + keystores are git‑ignored; APK is
@@ -665,3 +667,111 @@ both web and Android.
   `tools\embed_page.ps1` (107.1 KB); `favicon_svg.h` unchanged.
 - **Uncommitted on `main`** (HEAD `0da714c`). No push / release until the user
   signs off on both platforms.
+
+---
+
+## Update — 2026-10-14: **USB (PC) mode** — dashboard over the USB cable
+
+### What was asked
+> "In the computer that I am testing (in school) I don't have access to BLE or
+> Wi-Fi, but all the components are there — can you create an option to use this
+> on a PC through a USB cable?"
+
+Run the dashboard on a PC with the ESP32 on a USB cable — no Wi-Fi, no BLE.
+
+### How it works
+1. **Firmware** streams the same JSON snapshot over `Serial` (USB) that it
+   already pushes over BLE, and accepts `GET` / `PING` / `CFG:w,s,f,c` as
+   newline-terminated commands (mirrors the BLE protocol). Gated by
+   `ENABLE_SERIAL_JSON` (default 1, with an `#ifndef` fallback so an old
+   `config.h` still compiles). The `raw,avg,status` CSV still prints for the
+   Arduino Serial Plotter.
+2. **`web/usb_server.ps1`** (new, plain Windows PowerShell — nothing to install)
+   serves `web/index.html` and bridges `/data` + `/config` (+ `/serial-info`)
+   to the COM port at 115200 baud. It parses JSON snapshots **and** falls back
+   to the legacy CSV lines, so **no reflash is required**. `-Demo` simulates
+   readings with no hardware.
+3. **`web/index.html`** gains a 4th data source **USB (PC)** (`data-v="usb"` —
+   `endpointUrl` returns the local route, source validation, chip label
+   `USB · SERIAL`, USB-specific hint and "not connected" banner).
+
+### Files touched this round
+- `esp32/food_spoilage_monitor/food_spoilage_monitor.ino` — new section 8b
+  (`serviceSerial`, `usbHandleLine`, `usbSendLine`), `#ifndef
+  ENABLE_SERIAL_JSON`, `serviceSerial()` in `loop()`, header docs (MODE 4).
+- `esp32/food_spoilage_monitor/config.example.h` — `ENABLE_SERIAL_JSON`.
+- `web/usb_server.ps1` — **new**.
+- `web/index.html` — USB source (button, hint, endpoint, banner, chip).
+- `esp32/food_spoilage_monitor/web_page.h` — regenerated (108.4 KB).
+- `README.md` — §1 "Four connectivity modes", §3 config, §6 API note, §7
+  **Option C — USB cable**; `android_app/README.md` — USB is web/PC-only note.
+
+### Verified on this PC (bridge on `:8013`/`:8014`, browser tool)
+- `/data`, `/config`, `/serial-info`, `/server-info` all correct; `/` and
+  `/favicon.svg` served.
+- Demo mode: chip `USB · SERIAL`, live readings, banner hidden.
+- No COM port: `/data` returns `503`, banner shows the USB guidance text.
+- Settings dialog: **USB (PC)** button present with `aria-checked=true`, correct
+  hint, ESP/BLE field groups stay hidden.
+- CSV fallback and JSON snapshot/ack parsing verified in isolation.
+- **Not verifiable here:** a real ESP32 on a COM port (no hardware / no ports).
+
+### Also pending (from the previous session)
+- v1.1.0 **GitHub Release** asset upload (`D:\Ripe_FR-1-v1.1.0.apk`) — the user
+  does this by hand; then the download docs (`README.md` §11,
+  `android_app/README.md`) get pointed at `v1.1.0`.
+
+---
+
+## Update — 2026-10-14: **settings redesign + profile picture** — v1.1.1
+
+### What was asked
+- Replace Settings with the mockup: title, nav items **Appearance / Settings /
+  Connections / Account / About This App**, and a profile block at the bottom.
+- Web stays a **floating** panel (site visible behind); **mobile web** is an
+  accordion with a back button; **Android** collapses the other sections when
+  one opens.
+- Remove the top **Account** button; remove **Save & connect** — every change
+  applies the moment it is chosen.
+- Add a **profile picture** picked from the device's images, shown inline in the
+  greeting (`Good evening, (pfp) reyansh`), synced with the account.
+- The web panel must not change size when switching options.
+
+### Web (`web/index.html`)
+- Settings sheet rebuilt as a floating two-pane: `.setbody` / `.setnav` /
+  `.setmain` / `.setpane`, five `[data-pane]` buttons + `.setprofile`.
+- Fixed content height (`min(72vh,620px)`) so the panel never resizes — the
+  content pane scrolls (`overflow-y:auto`, `scrollbar-gutter:stable`); the
+  profile is genuinely pinned (`margin-top:auto`, duplicate rule removed).
+  Mobile (≤640px) uses `.sheet.showmain` + `.setback` with a fixed pane height.
+- Greeting restructured to `#greetWord` + `#greetAv` (inline `<img class="gav">`)
+  + `#greetNameEl` + `#greetClock`; header `#acctBtn` removed.
+- `#pfpPick` / `#pfpInput` / `#pfpClear` / `#pfpPreview`; `pfp` in
+  `PREF_DEFAULTS` / `loadPrefs` / `CLOUD_PREF_KEYS`; `downscaleImage()` →
+  128×128 JPEG data URL; `setPfp()`, `updateProfileBlock()`, `selectPane()`.
+- `#setSave` removed; `applySettingsNow()` fires from `segSource` /
+  `segTransport` / `segSync` / `segPoll` and from debounced host/port inputs.
+- `web/firebase.js` — `pfp` added to the `simple` prefs array; import bumped
+  to `?v=5`.
+
+### Android (`MainActivity.kt`, `RipeCloud.kt`)
+- `SettingsDialog` rebuilt as an accordion (same five sections) with a `‹ Back`
+  button and a pinned profile block; `onChange` applies immediately.
+- `pfp` in `RipeSettings`; `uriToPfpDataUrl()` + `ProfileAvatar()`; picker via
+  `ActivityResultContracts.GetContent()`; avatar inline in both greetings; top
+  Account button removed.
+- `RipeCloud` — `pfp` in `CloudPrefs` / `watchPrefs` / `pushPrefs` and the
+  `FoodMonitorApp` merge.
+
+### Version / APK
+- `android_app/app/build.gradle.kts`: `versionCode 2` / `versionName "1.1.1"`.
+- Packaged as `D:\Ripe_FR-1-v1.1.1.apk` (13.61 MB, debug-signed sideload, same
+  as previous assets). `aapt` confirms `versionName='1.1.1'`.
+- GitHub Release upload is still manual (no `gh` CLI on this PC).
+
+### Verified
+- Web (mock server `:8013`): sheet measures **677×791** for all five options,
+  and with the tallest content expanded (custom fonts + colour editor) — pane
+  scrolls (629/620) instead of growing the panel; no console errors.
+- Android: `:app:assembleDebug` clean, no warnings.
+

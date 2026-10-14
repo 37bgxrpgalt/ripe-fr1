@@ -10,6 +10,11 @@ dark mode, Basic / Advanced view) and adds:
 - **Cloud sync** — one device *publishes* its readings, others *follow*,
 - **Email + password and Google sign‑in** (via Credential Manager).
 
+> **USB‑cable mode is web/PC only.** The browser dashboard can read the ESP32
+> over a USB serial bridge (`web/usb_server.ps1` — see the top‑level README
+> §7 Option C). The Android app uses Wi‑Fi, BLE and cloud sync instead;
+> USB‑OTG serial is not implemented.
+
 | | |
 |---|---|
 | Package | `com.example.foodmonitor` |

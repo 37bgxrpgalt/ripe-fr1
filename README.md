@@ -45,13 +45,14 @@ ripe-fr1/
 
 ---
 
-## 1. Three connectivity modes (Wi-Fi *and* BLE)
+## 1. Four connectivity modes (Wi-Fi, BLE *and* USB)
 
 | Mode | When it's used | How to reach the dashboard |
 |------|----------------|----------------------------|
 | **Wi-Fi (STA)** | Default — joins your router | `http://<ESP32-IP>` shown on the Serial monitor (115200 baud) |
 | **Access Point** | Router unreachable/offline — automatic after 15 s | Join Wi-Fi `FoodMonitor-XXXX` → `http://192.168.4.1` |
 | **BLE UART** | Always advertised when `ENABLE_BLE 1` | nRF Connect / any BLE UART app, or the **Pair via Bluetooth** button on the page (Chrome/Edge, needs a secure context) |
+| **USB (serial)** | No Wi-Fi **and** no Bluetooth — just a USB cable to a PC | Run `web/usb_server.ps1`; it serves the page and bridges the COM port. Pick **USB (PC)** in Settings (see [§7 Option C](#option-c--usb-cable-no-wi-fi-no-bluetooth)) |
 
 The ESP32 tries your router first; if the router is down it starts its own
 hotspot, so **there is always a way to check the sensor without home
@@ -61,6 +62,8 @@ internet**. BLE streams the same JSON every 2 s as a Nordic-UART service.
 - Service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
 - RX (write, phone → ESP32) `6e400002-…` · TX (notify, ESP32 → phone) `6e400003-…`
 - Commands: `GET` → one JSON snapshot · `CFG:warn,spoiled,floor,ceil` → save thresholds · `PING` → `PONG`
+- The **USB/serial** transport speaks the *same* protocol as plain newline
+  lines at 115200 baud (see [§7 Option C](#option-c--usb-cable-no-wi-fi-no-bluetooth)).
 
 ---
 
@@ -102,6 +105,7 @@ internet**. BLE streams the same JSON every 2 s as a Nordic-UART service.
    #define WIFI_SSID     "YOUR_SSID"
    #define WIFI_PASSWORD "YOUR_PASSWORD"
    #define ENABLE_BLE    1     // set 0 to save RAM / boost Wi-Fi range
+   #define ENABLE_SERIAL_JSON 1 // JSON over USB; set 0 for a CSV-only Plotter
    ```
 3. Open `food_spoilage_monitor.ino` and upload.
 4. Open Serial Monitor @ **115200** — it prints the dashboard URL and then a
@@ -162,17 +166,22 @@ Rule enforced in hardware and UI: `floor < warning < spoiled < ceil`.
 | `/proxy/data?host=&port=` | GET | *local server only* — reads `<host>:<port>/data` on the real ESP32 (no CORS) |
 | `/proxy/config?host=&port=` | POST | *local server only* — forwards the body to `<host>:<port>/config` |
 
-The `web/settings.json` file is created the first time you press **Save & connect**;
-delete it to forget the address. The ESP32 also answers `OPTIONS` and sends
+The `web/settings.json` file is created the first time you set the ESP32
+address; delete it to forget the address. The ESP32 also answers `OPTIONS` and sends
 `Access-Control-Allow-Origin: *`, so the dashboard can poll it **directly** from
 a browser (Settings → ESP32 → *Direct from browser*).
 
+`web/usb_server.ps1` (USB mode) serves the same `/`, `/data` and `/config`
+routes and adds `GET /serial-info` (port, baud, last line, age of the last
+reading) for the Settings panel.
+
 ---
 
-## 7. Running the UI — mock sensor **or** a real ESP32
+## 7. Running the UI — mock sensor, USB cable, **or** a real ESP32
 
-The local server is both a mock sensor and a bridge to real hardware. Start
-it, open the page, then pick the source in **Settings → Data source**.
+The local server is both a mock sensor and a bridge to real hardware; for a
+cable-only PC there is a separate USB serial bridge. Start one, open the page,
+then pick the source in **Settings → Data source**.
 
 **Windows (no installs needed):**
 ```powershell
@@ -198,9 +207,10 @@ powershell -ExecutionPolicy Bypass -File web\mock_server.ps1 -Esp32Host 192.168.
 #   or:  python web/mock_server.py --esp32 192.168.1.57
 #   or:  python web/mock_server.py --mode esp32 --esp32 192.168.1.57   # boot straight into ESP32
 ```
-Then **Settings → Data source → ESP32 device → Test connection → Save & connect**.
-The address you Save is also written to `web/settings.json`, so a fresh browser
-(or a cleared `localStorage`) picks it up automatically on first load.
+Then **Settings → Data source → ESP32 (Wi-Fi)** — the address applies as soon as
+you type it; use **Test connection** to check it. The address is also written to
+`web/settings.json`, so a fresh browser (or a cleared `localStorage`) picks it up
+automatically on first load.
 
 - **Via local server** (default) — the browser calls `/proxy/data` on the local
   server, which forwards to the ESP32. No CORS, works over plain HTTP. Use this.
@@ -213,6 +223,33 @@ env `ESP32_HOST`, `MODE`. (`--mode esp32` makes `/data` itself live.)
 
 > Windows note: if port 8000 is blocked (`WinError 10013`), pass `-Port 8010` /
 > `--port 8010` and open `http://localhost:8010`.
+
+### Option C — USB cable (no Wi-Fi, no Bluetooth)
+For a locked-down PC with neither a network nor Bluetooth (e.g. a school
+machine), plug the ESP32 into a USB port and run the serial bridge — a small
+PowerShell script that serves the dashboard *and* talks to the device:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File web\usb_server.ps1
+# open http://localhost:8013   (the script prints the exact URL)
+```
+
+Then **Settings → Data source → USB (PC)**. The bridge opens the COM port at
+115200 baud, serves the page offline, and forwards `/data` + `/config` — so a
+threshold **Save** goes down the cable and into the device's flash, exactly like
+BLE/Wi-Fi.
+
+- Works with the current firmware, which streams one JSON line every 2 s.
+- **No reflash needed:** it also parses the Plotter's `raw,avg,status` CSV
+  lines, so older firmware still works (the gauge uses the device's own status
+  word).
+- Choose ports explicitly if needed: `-ComPort COM5`, `-Baud 115200`,
+  `-Port 8014`.
+- No hardware at hand? `-Demo` runs the bridge with simulated readings.
+- Copy `web\usb_server.ps1` (plus `web\index.html` and `web\favicon.svg`) to the
+  PC — nothing to install, no internet required.
+- Close anything else holding the port first (Arduino Serial Monitor, a running
+  `mock_server.ps1`).
 
 ---
 

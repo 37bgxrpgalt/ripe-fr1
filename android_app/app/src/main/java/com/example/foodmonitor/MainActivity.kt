@@ -25,6 +25,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateIntAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -33,6 +34,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -41,12 +44,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -258,6 +264,57 @@ fun activePalette(settings: RipeSettings): RipePalette = when (settings.theme) {
     else -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
 }
 
+/** Decode a `data:image/...;base64,...` profile picture into an ImageBitmap. */
+fun decodeDataUrlPfp(dataUrl: String?): ImageBitmap? {
+    val s = dataUrl?.trim().orEmpty()
+    if (!s.startsWith("data:image")) return null
+    val comma = s.indexOf(',')
+    if (comma < 0) return null
+    return try {
+        val bytes = android.util.Base64.decode(s.substring(comma + 1), android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** Read a picture the user picked, downscale it to a 128px square JPEG and
+ *  return a small data URL so it can travel with the account document. */
+fun uriToPfpDataUrl(context: Context, uri: android.net.Uri): String? {
+    return try {
+        val src = android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
+            ?: return null
+        val size = 128
+        val ratio = maxOf(size.toFloat() / src.width, size.toFloat() / src.height)
+        val w = (src.width * ratio).toInt().coerceAtLeast(1)
+        val h = (src.height * ratio).toInt().coerceAtLeast(1)
+        val scaled = android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
+        val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(out).drawBitmap(scaled, ((size - w) / 2).toFloat(), ((size - h) / 2).toFloat(), null)
+        val bs = java.io.ByteArrayOutputStream()
+        out.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, bs)
+        "data:image/jpeg;base64," + android.util.Base64.encodeToString(bs.toByteArray(), android.util.Base64.NO_WRAP)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/** The little round profile picture shown inline in the greeting and in the
+ *  settings profile block. Renders nothing when there is no picture. */
+@Composable
+fun ProfileAvatar(pfp: String?, size: androidx.compose.ui.unit.Dp, borderColor: Color) {
+    val bmp = remember(pfp) { decodeDataUrlPfp(pfp) } ?: return
+    Image(
+        bitmap = bmp,
+        contentDescription = "Profile picture",
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(borderColor)
+    )
+}
+
 // Bundled fonts (res/font) — no Google Play Services / downloadable fonts
 // needed, so they work offline on any device or emulator image. Two pairings
 // mirror the web dashboard's [data-font] switch:
@@ -310,6 +367,8 @@ data class RipeSettings(
     val sync: String = "Off",
     /** v1.1.0 — look & feel shared with the account. */
     val name: String = "",
+    /** Custom profile picture as a small square data URL (shared with the account). */
+    val pfp: String = "",
     val anim: String = "On",
     val fHead: String = "",
     val fBody: String = "",
@@ -702,6 +761,20 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
     // account chooser, and the API is suspending, so it needs a coroutine scope.
     val scope = rememberCoroutineScope()
 
+    // Persist a settings change at once — there is no Save button.
+    val applySettings: (RipeSettings) -> Unit = { updated ->
+        settings = updated
+        saveSettings(context, updated)
+        cloudUid?.let { RipeCloud.pushPrefs(it, updated) }
+    }
+    // Pick a profile picture from the device's images, downscale, then share it.
+    val photoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val dataUrl = uriToPfpDataUrl(context, uri)
+            if (dataUrl != null) applySettings(settings.copy(pfp = dataUrl))
+        }
+    }
+
     // --- Custom fonts: download the named Google Fonts at runtime -----------
     var customDisplay by remember { mutableStateOf<FontFamily?>(null) }
     var customUi by remember { mutableStateOf<FontFamily?>(null) }
@@ -749,6 +822,7 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
                             mode = cp.mode?.takeIf { it.isNotEmpty() } ?: settings.mode,
                             pollingMs = cp.pollingMs ?: settings.pollingMs,
                             name = cp.name ?: settings.name,
+                            pfp = cp.pfp ?: settings.pfp,
                             anim = cp.anim?.takeIf { it.isNotEmpty() } ?: settings.anim,
                             fHead = cp.fHead ?: settings.fHead,
                             fBody = cp.fBody ?: settings.fBody,
@@ -848,7 +922,6 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
                     followedReading = followedReading,
                     onPublish = onPublish,
                     onOpenSettings = { showSettings = true },
-                    onOpenAuth = { showAuth = true },
                     onLayoutChange = { newLayout ->
                         val updated = settings.copy(layout = newLayout, layoutReady = true)
                         settings = updated
@@ -864,15 +937,8 @@ fun FoodMonitorApp(initialSettings: RipeSettings = RipeSettings()) {
                         cloudBusy = cloudBusy,
                         cloudMsg = cloudMsg,
                         cloudMsgBad = cloudMsgBad,
-                        onApply = { updated ->
-                            settings = updated
-                            saveSettings(context, updated)
-                            val uid = cloudUid
-                            if (uid != null) {
-                                RipeCloud.pushPrefs(uid, updated)
-                            }
-                            showSettings = false
-                        },
+                        onChange = applySettings,
+                        onPickPhoto = { photoLauncher.launch("image/*") },
                         onCloudSignOut = doSignOut,
                         onOpenAuth = { showSettings = false; showAuth = true },
                         onClose = { showSettings = false }
@@ -1127,10 +1193,10 @@ fun CustomBoardScreen(
     onLayoutChange: (List<BoardItem>) -> Unit,
     greetWord: String,
     greetName: String,
+    pfp: String,
     clockText: String,
     signedInDash: Boolean,
     cloudEmail: String?,
-    onOpenAuth: () -> Unit,
     onOpenSettings: () -> Unit,
     rawValue: Int,
     percentage: Int,
@@ -1155,12 +1221,19 @@ fun CustomBoardScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(chipLabel, fontFamily = LocalUiFont.current, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = p.muted)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Account", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink, modifier = Modifier.clickable { onOpenAuth() }.padding(horizontal = 10.dp, vertical = 7.dp))
                         Text("Settings", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink, modifier = Modifier.clickable { onOpenSettings() }.padding(horizontal = 10.dp, vertical = 7.dp))
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("$greetWord, $greetName", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("$greetWord,", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                    if (pfp.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(9.dp))
+                        ProfileAvatar(pfp, 24.dp, p.sunken)
+                    }
+                    Spacer(modifier = Modifier.width(7.dp))
+                    Text(greetName, fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                }
                 Text("$clockText  ·  " + if (signedInDash) "syncing as $cloudEmail" else "this device only", fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted)
             }
         }
@@ -1282,42 +1355,36 @@ fun SettingsDialog(
     cloudBusy: Boolean,
     cloudMsg: String?,
     cloudMsgBad: Boolean,
-    onApply: (RipeSettings) -> Unit,
+    onChange: (RipeSettings) -> Unit,
+    onPickPhoto: () -> Unit,
     onCloudSignOut: () -> Unit,
     onOpenAuth: () -> Unit,
     onClose: () -> Unit
 ) {
-    var themeSelection by remember(settings) { mutableStateOf(settings.theme) }
-    var fontSelection by remember(settings) { mutableStateOf(settings.font) }
-    var modeSelection by remember(settings) { mutableStateOf(settings.mode) }
-    var sourceSelection by remember(settings) { mutableStateOf(settings.source) }
-    var hostIp by remember(settings) { mutableStateOf(settings.host) }
-    var port by remember(settings) { mutableStateOf(settings.port) }
-    var routingSelection by remember(settings) { mutableStateOf(settings.routing) }
-    var pollingSelection by remember(settings) {
-        mutableStateOf(when (settings.pollingMs) { 1000L -> "1 s"; 5000L -> "5 s"; else -> "2 s" })
-    }
-    var syncSelection by remember(settings) {
-        mutableStateOf(
-            if (settings.sync == "Publish this device" || settings.sync == "Follow the cloud")
-                settings.sync else "Off"
-        )
-    }
+    // Local text state so typing is stable; every change is applied at once.
+    var hostIp by remember { mutableStateOf(settings.host) }
+    var port by remember { mutableStateOf(settings.port) }
+    var nameText by remember { mutableStateOf(settings.name) }
+    var fHeadText by remember { mutableStateOf(settings.fHead) }
+    var fBodyText by remember { mutableStateOf(settings.fBody) }
     var testResult by remember { mutableStateOf<String?>(null) }
-    // v1.1.0 look & feel
-    var animSelection by remember(settings) { mutableStateOf(settings.anim) }
-    var nameText by remember(settings) { mutableStateOf(settings.name) }
-    var fHeadText by remember(settings) { mutableStateOf(settings.fHead) }
-    var fBodyText by remember(settings) { mutableStateOf(settings.fBody) }
-    var colorsState by remember(settings) { mutableStateOf(settings.colors) }
-    var presetSelection by remember(settings) { mutableStateOf("Ripe") }
     var showColors by remember { mutableStateOf(false) }
+    var presetSelection by remember { mutableStateOf("Ripe") }
+    // Accordion: expanding one section collapses the others.
+    var openSection by remember { mutableStateOf("Appearance") }
+
     val signedIn = cloudEmail != null
     val scope = rememberCoroutineScope()
     val p = activePalette(settings)
+    val pollLabel = when (settings.pollingMs) { 1000L -> "1 s"; 5000L -> "5 s"; else -> "2 s" }
+    val syncLabel =
+        if (settings.sync == "Publish this device" || settings.sync == "Follow the cloud") settings.sync else "Off"
+    val profileName = settings.name.trim()
+        .ifBlank { cloudEmail.orEmpty().substringBefore("@") }
+        .ifBlank { "Guest" }
 
     fun buildUrl(): String =
-        if (routingSelection == "Via local server")
+        if (settings.routing == "Via local server")
             "http://$hostIp:$port/proxy/data?host=$hostIp&port=$port"
         else
             "http://$hostIp:$port/data"
@@ -1336,61 +1403,54 @@ fun SettingsDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .fillMaxHeight(0.92f)
                     .clip(RoundedCornerShape(14.dp))
                     .background(p.panel)
-                    .padding(24.dp)
+                    .padding(20.dp)
             ) {
-                // Settings Header
+                // Header: a back button (closes the panel) + the title.
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onClose() }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text("‹ Back", fontFamily = LocalUiFont.current, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
                     Text("SETTINGS", fontFamily = LocalDisplayFont.current, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = p.muted, letterSpacing = 1.sp)
-                    Text(
-                        "Close", 
-                        fontFamily = LocalUiFont.current, 
-                        fontSize = 13.5.sp, 
-                        color = p.ink,
-                        textDecoration = TextDecoration.Underline,
-                        modifier = Modifier.clickable { onClose() }
-                    )
                 }
 
-                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                    item {
-                        SettingsSection("DASHBOARD", p)
-                        SegmentedControl(listOf("Basic", "Advanced", "Custom"), modeSelection, p) { modeSelection = it }
-                        SettingsHint(
-                            when (modeSelection) {
-                                "Basic" -> "Basic hides the numbers — just says whether the food is spoiled."
-                                "Custom" -> "Custom shows the dashboard board — pick which widgets you want."
-                                else -> "Advanced shows the live ADC readout, VOC trend, status history and calibration."
-                            },
-                            p
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
+                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
 
-                        SettingsSection("APPEARANCE", p)
-                        SegmentedControl(listOf("Light", "Dark", "System", "Custom"), themeSelection, p) { themeSelection = it }
-                        SettingsHint(if (themeSelection == "Custom")
+                    // ------------------------------ Appearance -----------------------------
+                    AccordionHeader("Appearance", openSection == "Appearance", p) {
+                        openSection = if (openSection == "Appearance") "" else "Appearance"
+                    }
+                    if (openSection == "Appearance") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SegmentedControl(listOf("Light", "Dark", "System", "Custom"), settings.theme, p) { onChange(settings.copy(theme = it)) }
+                        SettingsHint(if (settings.theme == "Custom")
                             "Custom uses the palette below and overrides Light and Dark."
                         else
                             "Stored on this device and shared with your account.", p)
                         Spacer(modifier = Modifier.height(12.dp))
-                        SegmentedControl(listOf("Grotesk", "Editorial", "Custom"), fontSelection, p) { fontSelection = it }
-                        SettingsHint(
-                            when (fontSelection) {
-                                "Editorial" -> "Editorial: Merriweather for headings and figures, PT Sans for body text."
-                                "Custom" -> "Custom: downloads the Google Fonts families below at runtime and caches them."
-                                else -> "Grotesk: Space Grotesk + Urbanist."
-                            },
-                            p
-                        )
-                        if (fontSelection == "Custom") {
+                        SegmentedControl(listOf("Grotesk", "Editorial", "Custom"), settings.font, p) { onChange(settings.copy(font = it)) }
+                        SettingsHint(when (settings.font) {
+                            "Editorial" -> "Editorial: Merriweather for headings and figures, PT Sans for body text."
+                            "Custom" -> "Custom: downloads the Google Fonts families below at runtime and caches them."
+                            else -> "Grotesk: Space Grotesk + Urbanist."
+                        }, p)
+                        if (settings.font == "Custom") {
                             Spacer(modifier = Modifier.height(12.dp))
                             OutlinedTextField(
-                                value = fHeadText, onValueChange = { fHeadText = it }, singleLine = true,
+                                value = fHeadText,
+                                onValueChange = { fHeadText = it; onChange(settings.copy(fHead = it)) },
+                                singleLine = true,
                                 label = { Text("Display font family", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
@@ -1401,7 +1461,9 @@ fun SettingsDialog(
                             )
                             Spacer(modifier = Modifier.height(10.dp))
                             OutlinedTextField(
-                                value = fBodyText, onValueChange = { fBodyText = it }, singleLine = true,
+                                value = fBodyText,
+                                onValueChange = { fBodyText = it; onChange(settings.copy(fBody = it)) },
+                                singleLine = true,
                                 label = { Text("Body font family", fontFamily = LocalUiFont.current, fontSize = 13.sp) },
                                 colors = OutlinedTextFieldDefaults.colors(
                                     unfocusedContainerColor = p.panelHi, focusedContainerColor = p.panelHi,
@@ -1410,14 +1472,13 @@ fun SettingsDialog(
                                 textStyle = androidx.compose.ui.text.TextStyle(fontFamily = LocalUiFont.current, fontSize = 15.sp, color = p.ink),
                                 modifier = Modifier.fillMaxWidth()
                             )
-                            SettingsHint("e.g. Playfair Display, Inter, Lora. Saved on save & connect.", p)
+                            SettingsHint("e.g. Playfair Display, Inter, Lora — loaded live from Google Fonts.", p)
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        SettingsSection("COLOURS — CUSTOM THEME", p)
+                        Spacer(modifier = Modifier.height(18.dp))
+                        SettingsSection("COLOURS", p)
                         SegmentedControl(listOf("Ripe", "Midnight", "Paper", "Contrast"), presetSelection, p) {
                             presetSelection = it
-                            colorsState = COLOR_PRESETS[it] ?: emptyMap()
+                            onChange(settings.copy(colors = COLOR_PRESETS[it] ?: emptyMap()))
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Row(
@@ -1436,39 +1497,68 @@ fun SettingsDialog(
                         if (showColors) {
                             Spacer(modifier = Modifier.height(6.dp))
                             COLOR_TOKENS.forEach { (key, label) ->
-                                ColorRow(label, colorsState[key] ?: RipeDefaultColors[key] ?: "#000000", p) { v ->
-                                    colorsState = colorsState + (key to v)
+                                ColorRow(label, settings.colors[key] ?: RipeDefaultColors[key] ?: "#000000", p) { v ->
+                                    onChange(settings.copy(colors = settings.colors + (key to v)))
                                 }
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 "Reset all colours", fontFamily = LocalUiFont.current, fontSize = 13.sp,
                                 color = p.ink2, textDecoration = TextDecoration.Underline,
-                                modifier = Modifier.clickable { colorsState = emptyMap() }
+                                modifier = Modifier.clickable { onChange(settings.copy(colors = emptyMap())) }
                             )
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
-
+                        Spacer(modifier = Modifier.height(18.dp))
                         SettingsSection("MOTION", p)
-                        SegmentedControl(listOf("On", "Off"), animSelection, p) { animSelection = it }
+                        SegmentedControl(listOf("On", "Off"), settings.anim, p) { onChange(settings.copy(anim = it)) }
                         SettingsHint("Panels rise in and figures count up. Choose Off to reduce motion.", p)
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
 
+                    // ------------------------------- Settings ------------------------------
+                    AccordionHeader("Settings", openSection == "Settings", p) {
+                        openSection = if (openSection == "Settings") "" else "Settings"
+                    }
+                    if (openSection == "Settings") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SettingsSection("DASHBOARD", p)
+                        SegmentedControl(listOf("Basic", "Advanced", "Custom"), settings.mode, p) { onChange(settings.copy(mode = it)) }
+                        SettingsHint(
+                            when (settings.mode) {
+                                "Basic" -> "Basic hides the numbers — just says whether the food is spoiled."
+                                "Custom" -> "Custom shows the dashboard board — add, move and resize widgets right on the dashboard."
+                                else -> "Advanced shows the live ADC readout, VOC trend, status history and calibration."
+                            }, p
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        SettingsSection("POLLING", p)
+                        SegmentedControl(listOf("1 s", "2 s", "5 s"), pollLabel, p) {
+                            onChange(settings.copy(pollingMs = when (it) { "1 s" -> 1000L; "5 s" -> 5000L; else -> 2000L }))
+                        }
+                        SettingsHint("Firmware cadence is 2,000 ms (REFRESH_MS in config.h); faster polls return the same sample.", p)
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    // ----------------------------- Connections -----------------------------
+                    AccordionHeader("Connections", openSection == "Connections", p) {
+                        openSection = if (openSection == "Connections") "" else "Connections"
+                    }
+                    if (openSection == "Connections") {
+                        Spacer(modifier = Modifier.height(12.dp))
                         SettingsSection("DATA SOURCE", p)
-                        SegmentedControl(listOf("Mock server", "ESP32 (Wi-Fi)", "Bluetooth (BLE)"), sourceSelection, p) { sourceSelection = it }
-                        SettingsHint(if (sourceSelection == "Bluetooth (BLE)")
+                        SegmentedControl(listOf("Mock server", "ESP32 (Wi-Fi)", "Bluetooth (BLE)"), settings.source, p) { onChange(settings.copy(source = it)) }
+                        SettingsHint(if (settings.source == "Bluetooth (BLE)")
                             "Bluetooth: the app scans for “FoodMonitor” and pairs automatically — no Wi-Fi needed."
                         else
                             "ESP32 over Wi-Fi: readings come from the device at http://$hostIp:$port/data.", p)
-                        Spacer(modifier = Modifier.height(24.dp))
-
+                        Spacer(modifier = Modifier.height(14.dp))
                         SettingsSection("ESP32 ADDRESS", p)
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("HOST OR IP", fontFamily = LocalDisplayFont.current, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.muted, modifier = Modifier.padding(bottom = 6.dp))
                                 OutlinedTextField(
                                     value = hostIp,
-                                    onValueChange = { hostIp = it },
+                                    onValueChange = { hostIp = it; onChange(settings.copy(host = it)) },
                                     singleLine = true,
                                     colors = OutlinedTextFieldDefaults.colors(
                                         unfocusedContainerColor = p.panelHi,
@@ -1484,7 +1574,7 @@ fun SettingsDialog(
                                 Text("PORT", fontFamily = LocalDisplayFont.current, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.muted, modifier = Modifier.padding(bottom = 6.dp))
                                 OutlinedTextField(
                                     value = port,
-                                    onValueChange = { port = it },
+                                    onValueChange = { port = it; onChange(settings.copy(port = it)) },
                                     singleLine = true,
                                     colors = OutlinedTextFieldDefaults.colors(
                                         unfocusedContainerColor = p.panelHi,
@@ -1499,33 +1589,78 @@ fun SettingsDialog(
                         }
                         SettingsHint("The last saved address is remembered, so a cleared browser or a new device still finds it.", p)
                         Spacer(modifier = Modifier.height(12.dp))
-                        SegmentedControl(listOf("Via local server", "Direct from browser"), routingSelection, p) { routingSelection = it }
-                        SettingsHint("Requests go through this server. No CORS needed — use this when the page is served by the local server.", p)
-                        Spacer(modifier = Modifier.height(24.dp))
+                        SegmentedControl(listOf("Via local server", "Direct from browser"), settings.routing, p) { onChange(settings.copy(routing = it)) }
+                        SettingsHint("Via local server: requests go through the server, so no CORS is needed.", p)
+                        Spacer(modifier = Modifier.height(14.dp))
+                        SettingsSection("CLOUD SYNC", p)
+                        SegmentedControl(listOf("Off", "Publish this device", "Follow the cloud"), syncLabel, p) { onChange(settings.copy(sync = it)) }
+                        SettingsHint(
+                            when (settings.sync) {
+                                "Publish this device" ->
+                                    "Publish: this device keeps reading locally and mirrors each snapshot to your account, so other phones can follow it. Keep it on the ESP32's Wi-Fi."
+                                "Follow the cloud" ->
+                                    "Follow: this device shows whatever the publishing device is reading — open the app anywhere. Needs sign-in."
+                                else -> "Off — everything stays on this device."
+                            }, p
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            "Test connection",
+                            fontFamily = LocalUiFont.current,
+                            fontSize = 13.5.sp,
+                            color = p.ink2,
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier.clickable {
+                                scope.launch {
+                                    testResult = if (settings.source == "Bluetooth (BLE)") {
+                                        "BLE live — reading appears on the dashboard"
+                                    } else {
+                                        try {
+                                            val json = JSONObject(fetchData(buildUrl()))
+                                            "OK — raw ${json.optInt("raw", 0)} · ${json.optString("status", "?")}"
+                                        } catch (e: Exception) {
+                                            "Failed — ${e.message ?: "no response"}"
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        testResult?.let { SettingsHint(it, p) }
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
 
-                        SettingsSection("POLLING", p)
-                        SegmentedControl(listOf("1 s", "2 s", "5 s"), pollingSelection, p) { pollingSelection = it }
-                        SettingsHint("Firmware cadence is 2,000 ms (REFRESH_MS in config.h); faster polls return the same sample.", p)
-                        Spacer(modifier = Modifier.height(24.dp))
-
-                        SettingsSection("ACCOUNT", p)
-                        if (signedIn) {
-                            Text(
-                                "Signed in as $cloudEmail — readings and settings are shared with every device on this account.",
-                                fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
-                                lineHeight = 18.sp, modifier = Modifier.padding(bottom = 12.dp)
-                            )
-                        } else {
-                            Text(
-                                "Not signed in — sign in to share readings and settings across your devices.",
-                                fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
-                                lineHeight = 18.sp, modifier = Modifier.padding(bottom = 12.dp)
-                            )
+                    // ------------------------------- Account ------------------------------
+                    AccordionHeader("Account", openSection == "Account", p) {
+                        openSection = if (openSection == "Account") "" else "Account"
+                    }
+                    if (openSection == "Account") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            if (signedIn) "Signed in as $cloudEmail — readings and settings are shared with every device on this account."
+                            else "Not signed in — sign in to share readings and settings across your devices.",
+                            fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,
+                            lineHeight = 18.sp, modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                        Text("PROFILE PICTURE", fontFamily = LocalDisplayFont.current, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.muted, modifier = Modifier.padding(bottom = 8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(modifier = Modifier.size(56.dp).clip(CircleShape).background(p.sunken)) {
+                                if (settings.pfp.isNotBlank()) ProfileAvatar(settings.pfp, 56.dp, p.sunken)
+                            }
+                            CloudButton("Choose image…", filled = false, enabled = true, p = p) { onPickPhoto() }
+                            if (settings.pfp.isNotBlank()) {
+                                Text(
+                                    "Remove", fontFamily = LocalUiFont.current, fontSize = 13.sp,
+                                    color = p.ink2, textDecoration = TextDecoration.Underline,
+                                    modifier = Modifier.clickable { onChange(settings.copy(pfp = "")) }
+                                )
+                            }
                         }
+                        SettingsHint("Shown inline in the greeting, like “Good evening, (photo) reyansh”. Saved to your account and shared with every signed-in device.", p)
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text("DISPLAY NAME", fontFamily = LocalDisplayFont.current, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = p.muted, modifier = Modifier.padding(bottom = 6.dp))
                         OutlinedTextField(
                             value = if (signedIn) nameText else "Guest",
-                            onValueChange = { nameText = it },
+                            onValueChange = { nameText = it; onChange(settings.copy(name = it)) },
                             enabled = signedIn,
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1556,82 +1691,57 @@ fun SettingsDialog(
                                 modifier = Modifier.padding(top = 10.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
 
-                        SettingsSection("CLOUD SYNC", p)
-                        SegmentedControl(listOf("Off", "Publish this device", "Follow the cloud"), syncSelection, p) { syncSelection = it }
-                        SettingsHint(
-                            when (syncSelection) {
-                                "Publish this device" ->
-                                    "Publish: this device keeps reading locally and mirrors each snapshot to your account, so other phones can follow it. Keep it on the ESP32's Wi-Fi."
-                                "Follow the cloud" ->
-                                    "Follow: this device shows whatever the publishing device is reading — open the app anywhere. Needs sign-in."
-                                else -> "Off — everything stays on this device."
-                            }, p
-                        )
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Button(
-                                onClick = {
-                                    val pollMs = when (pollingSelection) {
-                                        "1 s" -> 1000L
-                                        "5 s" -> 5000L
-                                        else -> 2000L
-                                    }
-                                    onApply(
-                                        settings.copy(
-                                            theme = themeSelection,
-                                            font = fontSelection,
-                                            mode = modeSelection,
-                                            source = sourceSelection,
-                                            host = hostIp,
-                                            port = port,
-                                            routing = routingSelection,
-                                            pollingMs = pollMs,
-                                            sync = syncSelection,
-                                            anim = animSelection,
-                                            name = if (signedIn) nameText.trim() else settings.name,
-                                            fHead = if (fontSelection == "Custom") fHeadText.trim() else settings.fHead,
-                                            fBody = if (fontSelection == "Custom") fBodyText.trim() else settings.fBody,
-                                            colors = colorsState
-                                        )
-                                    )
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = p.warn),
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 11.dp)
-                            ) {
-                                Text("Save & connect", fontFamily = LocalUiFont.current, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = p.ink)
-                            }
-                            Text(
-                                "Test connection", 
-                                fontFamily = LocalUiFont.current, 
-                                fontSize = 13.5.sp, 
-                                color = p.ink2,
-                                textDecoration = TextDecoration.Underline,
-                                modifier = Modifier.clickable {
-                                    scope.launch {
-                                        testResult = if (sourceSelection == "Bluetooth (BLE)") {
-                                            "BLE live — reading appears on the dashboard"
-                                        } else {
-                                            try {
-                                                val json = JSONObject(fetchData(buildUrl()))
-                                                "OK — raw ${json.optInt("raw", 0)} · ${json.optString("status", "?")}"
-                                            } catch (e: Exception) {
-                                                "Failed — ${e.message ?: "no response"}"
-                                            }
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SettingsHint(("On save — ${sourceSelection.lowercase()} source · poll ${pollingSelection}" + (testResult?.let { " · $it" } ?: "")), p)
+                    // ---------------------------- About This App ----------------------------
+                    AccordionHeader("About This App", openSection == "About This App", p) {
+                        openSection = if (openSection == "About This App") "" else "About This App"
+                    }
+                    if (openSection == "About This App") {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        SettingsHint("Ripe FR-1 is a smart food spoilage monitor: an MQ-3 VOC sensor on an ESP32, wrapped in a dashboard that reads the device's JSON contract.", p)
+                        SettingsHint("Firmware 1.4.0 · model Ripe FR-1 · sensor MQ-3 · GPIO 34 · 12-bit ADC 0-4095.", p)
+                        SettingsHint("One warm gray temperature, a single accent (#edb100), and two signal colours used only for the sensor's verdict.", p)
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
+                // Pinned account profile block (matches the mockup).
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(38.dp).clip(CircleShape).background(p.sunken)) {
+                        if (settings.pfp.isNotBlank()) ProfileAvatar(settings.pfp, 38.dp, p.sunken)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(profileName, fontFamily = LocalDisplayFont.current, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = p.ink, maxLines = 1)
+                        Text(cloudEmail ?: "Not signed in", fontFamily = LocalUiFont.current, fontSize = 11.5.sp, color = p.muted, maxLines = 1)
                     }
                 }
             }
         }
+    }
+}
+
+/** One collapsible row of the settings accordion (mockup: label + chevron). */
+@Composable
+fun AccordionHeader(title: String, open: Boolean, p: RipePalette, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (open) p.sunken else Color.Transparent)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, fontFamily = LocalDisplayFont.current, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = p.ink, modifier = Modifier.weight(1f))
+        Text(if (open) "▾" else "▸", fontFamily = LocalDisplayFont.current, fontSize = 12.sp, color = p.muted)
     }
 }
 
@@ -1744,7 +1854,6 @@ fun FoodMonitorDashboard(
     followedReading: Reading?,
     onPublish: (Reading) -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenAuth: () -> Unit,
     onLayoutChange: (List<BoardItem>) -> Unit
 ) {
     var rawValue by remember { mutableStateOf(1398) }
@@ -2008,10 +2117,10 @@ fun FoodMonitorDashboard(
             onLayoutChange = onLayoutChange,
             greetWord = greetWord,
             greetName = greetName,
+            pfp = settings.pfp,
             clockText = clockText,
             signedInDash = signedInDash,
             cloudEmail = cloudEmail,
-            onOpenAuth = onOpenAuth,
             onOpenSettings = onOpenSettings,
             rawValue = if (animOn) shownRaw else rawValue,
             percentage = percentage,
@@ -2051,14 +2160,6 @@ fun FoodMonitorDashboard(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onOpenAuth() }
-                                .padding(horizontal = 11.dp, vertical = 7.dp)
-                        ) {
-                            Text("Account", fontFamily = LocalUiFont.current, fontSize = 13.sp, color = p.ink)
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
                                 .clickable { onOpenSettings() }
                                 .padding(horizontal = 11.dp, vertical = 7.dp)
                         ) {
@@ -2067,7 +2168,15 @@ fun FoodMonitorDashboard(
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("$greetWord, $greetName", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("$greetWord,", fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                    if (settings.pfp.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(9.dp))
+                        ProfileAvatar(settings.pfp, 24.dp, p.sunken)
+                    }
+                    Spacer(modifier = Modifier.width(7.dp))
+                    Text(greetName, fontFamily = LocalDisplayFont.current, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = p.ink)
+                }
                 Text(
                     "$clockText  ·  " + if (signedInDash) "syncing as $cloudEmail" else "this device only",
                     fontFamily = LocalUiFont.current, fontSize = 12.5.sp, color = p.muted,

@@ -297,13 +297,14 @@ button{cursor:pointer;font-family:var(--font-ui)}
 .hbtn{padding:7px 13px;font-size:13px}
 
 /* ---------- settings sheet (only overlay in the UI) ----------------------- */
-.scrim{position:fixed;inset:0;z-index:30;background:rgba(20,18,15,.55);
+.scrim{position:fixed;inset:0;z-index:30;background:rgba(20,18,15,.5);
   display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;overflow-y:auto}
 .scrim[hidden]{display:none}
-.sheet{width:min(560px,100%);background:var(--panel);border-radius:14px;
-  padding:22px 24px 24px;margin:auto 0}
-.sheet .shead{margin-bottom:18px}
+.sheet{width:min(820px,100%);background:var(--panel);border-radius:16px;
+  padding:20px 22px 22px;margin:auto 0}
+.sheet .shead{margin-bottom:16px;align-items:center}
 .grp{margin-bottom:20px}
+.grp:last-child{margin-bottom:0}
 .grp h3{margin:0 0 10px;font-family:var(--font-disp);font-weight:700;font-size:11px;
   text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
 .grp .hint{margin:10px 0 0}
@@ -314,6 +315,43 @@ button{cursor:pointer;font-family:var(--font-ui)}
 .sheet .fields{margin-top:12px}
 .sheet .actions{margin-top:4px}
 #espGrp[hidden]{display:none}
+
+/* ---------- settings sheet: floating two-pane (nav + content) -------------- */
+/* The content area is a fixed height so the sheet never resizes when you
+   switch options — its own pane scrolls instead of the whole panel growing. */
+.setbody{display:flex;gap:22px;align-items:stretch;height:min(72vh,620px)}
+.setnav{flex:0 0 196px;display:flex;flex-direction:column;gap:3px}
+.setnavbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  border:0;background:transparent;color:var(--ink);font-family:var(--font-disp);
+  font-weight:600;font-size:13.5px;padding:10px 12px;border-radius:10px;cursor:pointer;
+  transition:background .18s ease,color .18s ease}
+.setnavbtn:hover{background:var(--panel-hi)}
+.setnavbtn[aria-selected=true]{background:var(--sunken)}
+.setnavbtn .chev{margin-left:auto;color:var(--muted);font-size:13px;line-height:1}
+.setprofile{margin-top:auto;display:flex;gap:10px;align-items:center;
+  padding-top:14px;border-top:1px solid var(--hair)}
+.setpfp{width:38px;height:38px;border-radius:50%;flex:none;object-fit:cover;
+  background:var(--sunken);border:1px solid var(--hair);display:block}
+.setpname{font-family:var(--font-disp);font-weight:700;font-size:13.5px;color:var(--ink);
+  margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setpemail{font-size:11.5px;color:var(--muted);margin:1px 0 0;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.setmain{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable;
+  padding-right:6px}
+.setpane{display:none}
+.setpane.on{display:block}
+.setback{display:none;margin-bottom:14px}
+.pfprow{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+.pfpbig{width:56px;height:56px;border-radius:50%;flex:none;object-fit:cover;
+  background:var(--sunken);border:1px solid var(--hair);display:block}
+@media (max-width:640px){
+  .setbody{display:block;height:auto}
+  .setmain{display:none;padding-right:0}
+  .sheet.showmain .setnav{display:none}
+  .sheet.showmain .setmain{display:block;height:min(70vh,560px)}
+  .setback{display:inline-flex}
+  .setnavbtn .chev{font-size:15px}
+}
 
 /* ---------- footer: version facts, one dev link --------------------------- */
 footer{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;justify-content:space-between;
@@ -379,6 +417,9 @@ body,.panel,.readout,.verdict,.chamber,.greet,.authcard,.sheet{
 .greet .gline{margin:0;text-align:left;font-family:var(--font-disp);font-weight:700;
   font-size:20px;letter-spacing:-.01em;color:var(--ink)}
 .greet .gline .gname{color:var(--accent-deep)}
+.greet .gline .gav{width:24px;height:24px;border-radius:50%;object-fit:cover;
+  vertical-align:-5px;margin:0 7px 0 6px;border:1px solid var(--hair);display:inline-block}
+.greet .gline .gav[hidden]{display:none}
 .greet .gclock{margin-left:8px;font-family:var(--font-disp);font-variant-numeric:tabular-nums;
   font-weight:500;font-size:15px;color:var(--muted)}
 .greet .gsub{margin:4px 0 0;text-align:left;font-size:12.5px;color:var(--muted)}
@@ -501,19 +542,16 @@ body,.panel,.readout,.verdict,.chamber,.greet,.authcard,.sheet{
         <span class="lamp lamp-sm"></span>
         <span id="connText">Connecting…</span>
       </div>
-      <button class="btn-quiet hbtn" id="acctBtn" type="button" hidden>Account</button>
       <button class="btn-quiet hbtn" id="setBtn" aria-haspopup="dialog">Settings</button>
     </div>
   </header>
 
-  <!-- greeting: plain line under the wordmark (not boxed) — time follows the name -->
+  <!-- greeting: plain line under the wordmark (not boxed) — time follows the name.
+       The avatar sits inline before the name: "Good evening, (pfp) reyansh". -->
   <div class="greet" id="greet" hidden>
     <div>
-      <p class="gline"><span id="greetLine">Hello</span> <span class="gclock" id="greetClock">—</span></p>
+      <p class="gline"><span id="greetWord">Hello</span><img class="gav" id="greetAv" alt="" hidden><span class="gname" id="greetNameEl">Guest</span> <span class="gclock" id="greetClock">—</span></p>
       <p class="gsub" id="greetSub">—</p>
-    </div>
-    <div class="gact">
-      <button class="btn-quiet hbtn" id="greetAcct" type="button" hidden>Account</button>
     </div>
   </div>
 
@@ -654,157 +692,210 @@ body,.panel,.readout,.verdict,.chamber,.greet,.authcard,.sheet{
         <button class="btn-text" id="setClose">Close</button>
       </div>
 
-      <div class="grp">
-        <h3>Dashboard</h3>
-        <div class="seg" id="segMode" role="radiogroup" aria-label="Dashboard detail">
-          <button type="button" data-v="basic" role="radio">Basic</button>
-          <button type="button" data-v="advanced" role="radio">Advanced</button>
-          <button type="button" data-v="custom" role="radio">Custom</button>
-        </div>
-        <p class="hint" id="modeHint">Basic hides the numbers — just says whether the food is spoiled.</p>
-      </div>
-
-      <div class="grp" id="customGrp">
-        <h3>Custom dashboard</h3>
-        <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> above to use the board. Turn on <strong>Edit layout</strong>, then drag panels by their top and resize from the bottom-right corner.</p>
-        <div class="actions">
-          <button class="btn-quiet" id="editLayoutBtn" type="button">Edit layout</button>
-          <button class="btn-text" id="resetLayoutBtn" type="button">Reset layout</button>
-          <button class="btn-text" id="clearLayoutBtn" type="button">Clear board</button>
-        </div>
-        <div class="tray" id="widgetTray" style="margin-top:12px"></div>
-      </div>
-
-      <div class="grp">
-        <h3>Appearance</h3>
-        <div class="seg" id="segTheme" role="radiogroup" aria-label="Theme">
-          <button type="button" data-v="light" role="radio">Light</button>
-          <button type="button" data-v="dark" role="radio">Dark</button>
-          <button type="button" data-v="system" role="radio">System</button>
-          <button type="button" data-v="custom" role="radio">Custom</button>
-        </div>
-        <p class="hint">Saved in this browser only — the ESP32 stores no theme data.</p>
-        <div class="seg" id="segFont" role="radiogroup" aria-label="Typeface" style="margin-top:12px">
-          <button type="button" data-v="grotesk" role="radio">Grotesk</button>
-          <button type="button" data-v="editorial" role="radio">Editorial</button>
-          <button type="button" data-v="custom" role="radio">Custom…</button>
-        </div>
-        <p class="hint" id="fontHint">Grotesk: Space Grotesk + Urbanist.</p>
-        <div id="fontCustomGrp" hidden style="margin-top:12px">
-          <div class="fields">
-            <div class="field"><label for="inFHead">Headings font</label>
-              <input type="text" id="inFHead" placeholder="Poppins" spellcheck="false" autocomplete="off"></div>
-            <div class="field"><label for="inFBody">Body font</label>
-              <input type="text" id="inFBody" placeholder="Inter" spellcheck="false" autocomplete="off"></div>
+      <div class="setbody">
+        <!-- left: section nav + account profile (mockup) -->
+        <nav class="setnav" id="setNav" aria-label="Settings sections">
+          <button type="button" class="setnavbtn" data-pane="appearance" aria-selected="true">Appearance<span class="chev">›</span></button>
+          <button type="button" class="setnavbtn" data-pane="settings" aria-selected="false">Settings<span class="chev">›</span></button>
+          <button type="button" class="setnavbtn" data-pane="connections" aria-selected="false">Connections<span class="chev">›</span></button>
+          <button type="button" class="setnavbtn" data-pane="account" aria-selected="false">Account<span class="chev">›</span></button>
+          <button type="button" class="setnavbtn" data-pane="about" aria-selected="false">About This App<span class="chev">›</span></button>
+          <div class="setprofile">
+            <img class="setpfp" id="setPfp" alt="" hidden>
+            <div style="min-width:0">
+              <p class="setpname" id="setPName">Guest</p>
+              <p class="setpemail" id="setPEmail">Not signed in</p>
+            </div>
           </div>
-          <p class="hint" style="margin-top:10px">Any family from <strong>fonts.google.com</strong> — e.g. “Poppins”, “DM Sans”, “Playfair Display”. Loaded live from Google Fonts and shared with your signed-in devices.</p>
-          <div class="actions"><button class="btn-quiet" id="fontLoadBtn" type="button">Load fonts</button>
-            <button class="btn-text" id="fontResetBtn" type="button">Reset to Grotesk</button>
-            <span class="msg" id="fontMsg" aria-live="polite"></span></div>
-        </div>
-      </div>
+        </nav>
 
-      <div class="grp" id="colorGrp">
-        <h3>Colours — custom theme</h3>
-        <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> under Appearance to use these. Each field accepts <code>#rrggbb</code>, <code>#rgb</code> or <code>rgba(r,g,b,a)</code>.</p>
-        <div class="seg" id="segPreset" role="radiogroup" aria-label="Colour preset">
-          <button type="button" data-v="ripe">Ripe</button>
-          <button type="button" data-v="midnight">Midnight</button>
-          <button type="button" data-v="paper">Paper</button>
-          <button type="button" data-v="contrast">High contrast</button>
-        </div>
-        <button class="disclosure" id="colToggle" type="button" aria-expanded="false" aria-controls="colBody">
-          <span class="dcaret" aria-hidden="true">▸</span> Customise each colour
-        </button>
-        <div id="colBody" hidden>
-          <div class="colgrid" id="colGrid"></div>
-          <div class="actions"><button class="btn-text" id="colReset" type="button">Reset all colours</button>
-            <span class="msg" id="colMsg" aria-live="polite"></span></div>
-        </div>
-      </div>
+        <!-- right: the active pane -->
+        <div class="setmain">
 
-      <div class="grp">
-        <h3>Motion</h3>
-        <div class="seg" id="segAnim" role="radiogroup" aria-label="Animations">
-          <button type="button" data-v="on" role="radio">Animated</button>
-          <button type="button" data-v="off" role="radio">Reduce motion</button>
-        </div>
-        <p class="hint" id="animHint">Panels rise in, figures count up and the theme cross-fades.</p>
-      </div>
+          <section class="setpane on" data-pane="appearance">
+            <button type="button" class="btn-text setback" data-back>‹ All settings</button>
+            <div class="grp">
+              <h3>Theme</h3>
+              <div class="seg" id="segTheme" role="radiogroup" aria-label="Theme">
+                <button type="button" data-v="light" role="radio">Light</button>
+                <button type="button" data-v="dark" role="radio">Dark</button>
+                <button type="button" data-v="system" role="radio">System</button>
+                <button type="button" data-v="custom" role="radio">Custom</button>
+              </div>
+              <p class="hint">Applies at once. Kept in this browser, and shared with your account when you are signed in.</p>
+            </div>
+            <div class="grp">
+              <h3>Typeface</h3>
+              <div class="seg" id="segFont" role="radiogroup" aria-label="Typeface">
+                <button type="button" data-v="grotesk" role="radio">Grotesk</button>
+                <button type="button" data-v="editorial" role="radio">Editorial</button>
+                <button type="button" data-v="custom" role="radio">Custom…</button>
+              </div>
+              <p class="hint" id="fontHint">Grotesk: Space Grotesk + Urbanist.</p>
+              <div id="fontCustomGrp" hidden style="margin-top:12px">
+                <div class="fields">
+                  <div class="field"><label for="inFHead">Headings font</label>
+                    <input type="text" id="inFHead" placeholder="Poppins" spellcheck="false" autocomplete="off"></div>
+                  <div class="field"><label for="inFBody">Body font</label>
+                    <input type="text" id="inFBody" placeholder="Inter" spellcheck="false" autocomplete="off"></div>
+                </div>
+                <p class="hint" style="margin-top:10px">Any family from <strong>fonts.google.com</strong> — e.g. “Poppins”, “DM Sans”, “Playfair Display”. Loaded live from Google Fonts and shared with your signed-in devices.</p>
+                <div class="actions"><button class="btn-quiet" id="fontLoadBtn" type="button">Load fonts</button>
+                  <button class="btn-text" id="fontResetBtn" type="button">Reset to Grotesk</button>
+                  <span class="msg" id="fontMsg" aria-live="polite"></span></div>
+              </div>
+            </div>
+            <div class="grp" id="colorGrp">
+              <h3>Colours — custom theme</h3>
+              <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> under Theme to use these. Each field accepts <code>#rrggbb</code>, <code>#rgb</code> or <code>rgba(r,g,b,a)</code>.</p>
+              <div class="seg" id="segPreset" role="radiogroup" aria-label="Colour preset">
+                <button type="button" data-v="ripe">Ripe</button>
+                <button type="button" data-v="midnight">Midnight</button>
+                <button type="button" data-v="paper">Paper</button>
+                <button type="button" data-v="contrast">High contrast</button>
+              </div>
+              <button class="disclosure" id="colToggle" type="button" aria-expanded="false" aria-controls="colBody">
+                <span class="dcaret" aria-hidden="true">▸</span> Customise each colour
+              </button>
+              <div id="colBody" hidden>
+                <div class="colgrid" id="colGrid"></div>
+                <div class="actions"><button class="btn-text" id="colReset" type="button">Reset all colours</button>
+                  <span class="msg" id="colMsg" aria-live="polite"></span></div>
+              </div>
+            </div>
+            <div class="grp">
+              <h3>Motion</h3>
+              <div class="seg" id="segAnim" role="radiogroup" aria-label="Animations">
+                <button type="button" data-v="on" role="radio">Animated</button>
+                <button type="button" data-v="off" role="radio">Reduce motion</button>
+              </div>
+              <p class="hint" id="animHint">Panels rise in, figures count up and the theme cross-fades.</p>
+            </div>
+          </section>
 
-      <div class="grp">
-        <h3>Data source</h3>
-        <div class="seg" id="segSource" role="radiogroup" aria-label="Data source">
-          <button type="button" data-v="mock" role="radio">Mock server</button>
-          <button type="button" data-v="esp32" role="radio">ESP32 (Wi‑Fi)</button>
-          <button type="button" data-v="ble" role="radio">Bluetooth (BLE)</button>
-        </div>
-        <p class="hint" id="srcHint">Mock: the local server simulates the MQ‑3, same JSON contract as the firmware.</p>
-      </div>
+          <section class="setpane" data-pane="settings">
+            <button type="button" class="btn-text setback" data-back>‹ All settings</button>
+            <div class="grp">
+              <h3>Dashboard</h3>
+              <div class="seg" id="segMode" role="radiogroup" aria-label="Dashboard detail">
+                <button type="button" data-v="basic" role="radio">Basic</button>
+                <button type="button" data-v="advanced" role="radio">Advanced</button>
+                <button type="button" data-v="custom" role="radio">Custom</button>
+              </div>
+              <p class="hint" id="modeHint">Basic hides the numbers — just says whether the food is spoiled.</p>
+            </div>
+            <div class="grp" id="customGrp">
+              <h3>Custom dashboard</h3>
+              <p class="hint" style="margin-top:0">Pick <strong>Custom</strong> above to use the board. Turn on <strong>Edit layout</strong>, then drag panels by their top and resize from the bottom-right corner.</p>
+              <div class="actions">
+                <button class="btn-quiet" id="editLayoutBtn" type="button">Edit layout</button>
+                <button class="btn-text" id="resetLayoutBtn" type="button">Reset layout</button>
+                <button class="btn-text" id="clearLayoutBtn" type="button">Clear board</button>
+              </div>
+              <div class="tray" id="widgetTray" style="margin-top:12px"></div>
+            </div>
+            <div class="grp">
+              <h3>Polling</h3>
+              <div class="seg" id="segPoll" role="radiogroup" aria-label="Poll interval">
+                <button type="button" data-v="1000" role="radio">1 s</button>
+                <button type="button" data-v="2000" role="radio">2 s</button>
+                <button type="button" data-v="5000" role="radio">5 s</button>
+              </div>
+              <p class="hint">Firmware cadence is 2,000 ms (<code>REFRESH_MS</code> in config.h); faster polls return the same sample.</p>
+            </div>
+          </section>
 
-      <div class="grp" id="espGrp" hidden>
-        <h3>ESP32 address</h3>
-        <div class="fields">
-          <div class="field"><label for="inHost">Host or IP</label>
-            <input type="text" id="inHost" placeholder="192.168.1.57" spellcheck="false"></div>
-          <div class="field"><label for="inPort">Port</label>
-            <input type="number" id="inPort" min="1" max="65535" step="1"></div>
-        </div>
-        <p class="hint" style="margin-top:12px">The last saved address is remembered next to the server (settings.json), so a cleared browser or a new device still finds it.</p>
-        <div class="seg" id="segTransport" role="radiogroup" aria-label="Route" style="margin-top:12px">
-          <button type="button" data-v="proxy" role="radio">Via local server</button>
-          <button type="button" data-v="direct" role="radio">Direct from browser</button>
-        </div>
-        <p class="hint" id="trHint"></p>
-      </div>
+          <section class="setpane" data-pane="connections">
+            <button type="button" class="btn-text setback" data-back>‹ All settings</button>
+            <div class="grp">
+              <h3>Data source</h3>
+              <div class="seg" id="segSource" role="radiogroup" aria-label="Data source">
+                <button type="button" data-v="mock" role="radio">Mock server</button>
+                <button type="button" data-v="esp32" role="radio">ESP32 (Wi‑Fi)</button>
+                <button type="button" data-v="ble" role="radio">Bluetooth (BLE)</button>
+                <button type="button" data-v="usb" role="radio">USB (PC)</button>
+              </div>
+              <p class="hint" id="srcHint">Mock: the local server simulates the MQ‑3, same JSON contract as the firmware.</p>
+            </div>
+            <div class="grp" id="espGrp" hidden>
+              <h3>ESP32 address</h3>
+              <div class="fields">
+                <div class="field"><label for="inHost">Host or IP</label>
+                  <input type="text" id="inHost" placeholder="192.168.1.57" spellcheck="false"></div>
+                <div class="field"><label for="inPort">Port</label>
+                  <input type="number" id="inPort" min="1" max="65535" step="1"></div>
+              </div>
+              <p class="hint" style="margin-top:12px">The last saved address is remembered next to the server (settings.json), so a cleared browser or a new device still finds it.</p>
+              <div class="seg" id="segTransport" role="radiogroup" aria-label="Route" style="margin-top:12px">
+                <button type="button" data-v="proxy" role="radio">Via local server</button>
+                <button type="button" data-v="direct" role="radio">Direct from browser</button>
+              </div>
+              <p class="hint" id="trHint"></p>
+            </div>
+            <div class="grp" id="bleGrp" hidden>
+              <h3>Bluetooth (BLE)</h3>
+              <p class="hint" id="bleHint"></p>
+              <div class="actions" style="margin-top:12px">
+                <button class="btn-quiet" id="blePairBtn" type="button">Pair / connect now</button>
+                <span class="msg" id="bleSetMsg" aria-live="polite"></span>
+              </div>
+            </div>
+            <div class="grp" id="syncGrp">
+              <h3>Cloud sync</h3>
+              <div class="seg" id="segSync" role="radiogroup" aria-label="Cloud sync">
+                <button type="button" data-v="off" role="radio">Off</button>
+                <button type="button" data-v="publish" role="radio">Publish this device</button>
+                <button type="button" data-v="follow" role="radio">Follow the cloud</button>
+              </div>
+              <p class="hint" id="syncHint">Off — everything stays in this browser.</p>
+            </div>
+            <div class="actions">
+              <button class="btn-text" id="testBtn">Test connection</button>
+              <span class="msg" id="setMsg" aria-live="polite"></span>
+            </div>
+          </section>
 
-      <div class="grp" id="bleGrp" hidden>
-        <h3>Bluetooth (BLE)</h3>
-        <p class="hint" id="bleHint"></p>
-        <div class="actions" style="margin-top:12px">
-          <button class="btn-quiet" id="blePairBtn" type="button">Pair / connect now</button>
-          <span class="msg" id="bleSetMsg" aria-live="polite"></span>
-        </div>
-      </div>
+          <section class="setpane" data-pane="account">
+            <button type="button" class="btn-text setback" data-back>‹ All settings</button>
+            <div class="grp" id="acctGrp">
+              <h3>Account</h3>
+              <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in to share readings and settings across your devices.</p>
+              <div class="pfprow">
+                <img class="pfpbig" id="pfpPreview" alt="" hidden>
+                <div>
+                  <button class="btn-quiet" id="pfpPick" type="button">Choose image…</button>
+                  <button class="btn-text" id="pfpClear" type="button">Remove</button>
+                </div>
+                <input type="file" id="pfpInput" accept="image/*" hidden>
+              </div>
+              <p class="hint" style="margin-top:10px">Shown inline in the greeting — “Good evening, (pfp) reyansh”. Saved to your account and shared with every signed-in device.</p>
+              <div class="fields" id="acctNameRow" style="margin-top:12px">
+                <div class="field"><label for="inName">Display name</label>
+                  <input type="text" id="inName" placeholder="Your name" autocomplete="nickname" spellcheck="false"></div>
+              </div>
+              <p class="hint" style="margin-top:8px">Used for the greeting. Google sign-in fills this in automatically.</p>
+              <div class="actions" style="margin-top:12px">
+                <button class="btn-primary" id="acctManage" type="button">Sign in / Manage account</button>
+                <span class="msg" id="acctMsg" aria-live="polite"></span>
+              </div>
+            </div>
+          </section>
 
-      <div class="grp">
-        <h3>Polling</h3>
-        <div class="seg" id="segPoll" role="radiogroup" aria-label="Poll interval">
-          <button type="button" data-v="1000" role="radio">1 s</button>
-          <button type="button" data-v="2000" role="radio">2 s</button>
-          <button type="button" data-v="5000" role="radio">5 s</button>
-        </div>
-        <p class="hint">Firmware cadence is 2,000 ms (<code>REFRESH_MS</code> in config.h); faster polls return the same sample.</p>
-      </div>
+          <section class="setpane" data-pane="about">
+            <button type="button" class="btn-text setback" data-back>‹ All settings</button>
+            <div class="grp">
+              <h3>About This App</h3>
+              <p class="hint" style="margin-top:0">Ripe FR‑1 is a smart food spoilage monitor: an MQ‑3 VOC sensor on an ESP32, wrapped in the dashboard that reads the device's JSON contract — the very page the firmware serves is this UI.</p>
+              <p class="hint">Firmware <strong>1.4.0</strong> · model <strong>Ripe FR‑1</strong> · sensor <strong>MQ‑3 · GPIO 34 · 12‑bit ADC 0–4095</strong>.</p>
+            </div>
+            <div class="grp">
+              <h3>Interface</h3>
+              <p class="hint" style="margin-top:0">One warm gray temperature, a single accent (<code>#edb100</code>), and two signal colours used only for the sensor's verdict. No gradients, no icons, no emoji.</p>
+              <p class="hint" id="aboutCloud">Cloud sync is off — everything stays in this browser.</p>
+            </div>
+          </section>
 
-      <div class="grp" id="acctGrp">
-        <h3>Account</h3>
-        <p class="hint" id="acctOut" style="margin:0 0 10px">Not signed in — sign in to share readings and settings across your devices.</p>
-        <div class="fields" id="acctNameRow">
-          <div class="field"><label for="inName">Display name</label>
-            <input type="text" id="inName" placeholder="Your name" autocomplete="nickname" spellcheck="false"></div>
         </div>
-        <p class="hint" style="margin-top:8px">Used for the greeting. Google sign-in fills this in automatically.</p>
-        <div class="actions" style="margin-top:12px">
-          <button class="btn-primary" id="acctManage" type="button">Sign in / Manage account</button>
-          <span class="msg" id="acctMsg" aria-live="polite"></span>
-        </div>
-      </div>
-
-      <div class="grp" id="syncGrp">
-        <h3>Cloud sync</h3>
-        <div class="seg" id="segSync" role="radiogroup" aria-label="Cloud sync">
-          <button type="button" data-v="off" role="radio">Off</button>
-          <button type="button" data-v="publish" role="radio">Publish this device</button>
-          <button type="button" data-v="follow" role="radio">Follow the cloud</button>
-        </div>
-        <p class="hint" id="syncHint">Off — everything stays in this browser.</p>
-      </div>
-
-      <div class="actions">
-        <button class="btn-primary" id="setSave">Save &amp; connect</button>
-        <button class="btn-text" id="testBtn">Test connection</button>
-        <span class="msg" id="setMsg" aria-live="polite"></span>
       </div>
     </div>
   </div>
@@ -828,14 +919,16 @@ var SUGGESTED={warn:1600,spoiled:2600,floor:1000,ceil:3800};
 /* ------------------------------------------------------------ settings --- */
 /* Stored in localStorage under 'ripe.settings'.
    source:   'mock'  = local server simulates the MQ-3
-             'esp32' = readings come from the real device
+             'esp32' = readings come from the real device (Wi-Fi / AP)
+             'usb'   = device on a USB cable to the PC — web/usb_server.ps1
+                       bridges the COM port, so no Wi-Fi or Bluetooth needed
    transport:'proxy'  = local server forwards to the ESP32 (no CORS)
              'direct' = browser talks to the ESP32 itself (needs CORS)     */
 var PREF_KEY='ripe.settings';
 var PREF_DEFAULTS={theme:'system',font:'grotesk',mode:'advanced',
                    source:'mock',transport:'proxy',sync:'off',
                    host:'192.168.1.57',port:80,pollMs:2000,
-                   anim:'on',name:'',fHead:'',fBody:'',entered:false,
+                   anim:'on',name:'',pfp:'',fHead:'',fBody:'',entered:false,
                    colors:{},layout:[],layoutInit:false};
 function loadPrefs(){
   var o=JSON.parse(JSON.stringify(PREF_DEFAULTS)),k;
@@ -845,7 +938,7 @@ function loadPrefs(){
   }catch(e){}
   o.port=clamp(parseInt(o.port,10)||80,1,65535);
   o.pollMs=[1000,2000,5000].indexOf(parseInt(o.pollMs,10))>=0?parseInt(o.pollMs,10):2000;
-  if(o.source!=='mock'&&o.source!=='esp32'&&o.source!=='ble'){o.source='mock';}
+  if(o.source!=='mock'&&o.source!=='esp32'&&o.source!=='ble'&&o.source!=='usb'){o.source='mock';}
   if(o.transport!=='proxy'&&o.transport!=='direct'){o.transport='proxy';}
   if(o.theme!=='light'&&o.theme!=='dark'&&o.theme!=='system'&&o.theme!=='custom'){o.theme='system';}
   if(o.font!=='grotesk'&&o.font!=='editorial'&&o.font!=='custom'){o.font='grotesk';}
@@ -853,6 +946,7 @@ function loadPrefs(){
   if(o.sync!=='off'&&o.sync!=='publish'&&o.sync!=='follow'){o.sync='off';}
   if(o.anim!=='on'&&o.anim!=='off'){o.anim='on';}
   if(typeof o.name!=='string'){o.name='';}
+  if(typeof o.pfp!=='string'){o.pfp='';}
   if(typeof o.fHead!=='string'){o.fHead='';}
   if(typeof o.fBody!=='string'){o.fBody='';}
   o.entered=!!o.entered;
@@ -868,6 +962,8 @@ function endpointUrl(kind,p){
   p=p||state.prefs;
   if(p.source==='ble'){return kind;}   /* data arrives over BLE notifications */
   if(p.source==='mock'){return kind;} /* local mock server */
+  if(p.source==='usb'){return kind;}  /* this page IS the server — usb_server.ps1
+                                         bridges /data and /config to the COM port */
   var here=window.location.hostname;
   var herePort=parseInt(window.location.port,10)||
     (window.location.protocol==='https:'?443:80);
@@ -1098,7 +1194,7 @@ function onOnline(d){
     $('banner').hidden=true;
   }
   var pre=state.demo?'Demo · ':(state.prefs.source==='mock'?'Mock · ':
-    (state.prefs.source==='ble'?'BLE · ':'ESP32 · '));
+    (state.prefs.source==='ble'?'BLE · ':state.prefs.source==='usb'?'USB · ':'ESP32 · '));
   $('connChip').className='conn is-ok';
   $('connText').textContent=pre+d.mode;
 }
@@ -1107,11 +1203,11 @@ function onFail(){
   state.fails++;
   document.body.classList.add('stale');
   state.online=false;
-  var mock=state.prefs.source==='mock';
+  var mock=state.prefs.source==='mock',usb=state.prefs.source==='usb';
   /* A hosted page (e.g. GitHub Pages) has no local server to read: don't poll
      /data forever — stop after the first miss and show the guidance instead.
      On the ESP32's own page the first poll succeeds, so this never triggers. */
-  if(mock&&!isLocalHost()&&!state.demo){
+  if((mock||usb)&&!isLocalHost()&&!state.demo){
     state.fails=3;
     if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   }
@@ -1120,14 +1216,18 @@ function onFail(){
   if(state.fails<3){
     b.className='banner';
     $('bannerTitle').textContent='Reconnecting…';
-    $('bannerMsg').textContent='No answer from '+(mock?'the mock server':'/data')+' — retrying every '+
+    $('bannerMsg').textContent='No answer from '+(mock?'the mock server':(usb?'the USB bridge':'/data'))+' — retrying every '+
       fmt(state.prefs.pollMs)+' ms.';
     $('connChip').className='conn is-wait';
     $('connText').textContent='Reconnecting…';
   }else{
     b.className='banner is-off';
     $('bannerTitle').textContent='Disconnected.';
-    if(mock&&!isLocalHost()){
+    if(usb&&!isLocalHost()){
+      $('bannerMsg').textContent='This page is hosted, so it cannot reach the PC serial port. On the machine the ESP32 is plugged into, run the USB bridge (web\\usb_server.ps1) and open the address it prints.';
+    }else if(usb){
+      $('bannerMsg').textContent='No readings from the USB port yet. Plug the ESP32 into the PC, then restart web\\usb_server.ps1 so it can claim the COM port. Nothing to install — the bridge is plain Windows PowerShell.';
+    }else if(mock&&!isLocalHost()){
       $('bannerMsg').textContent='This hosted preview has no local server to read. Turn on “Preview demo data” for a fake readout, or sign in and choose Follow the cloud.';
     }else if(mock){
       $('bannerMsg').textContent='The local server stopped answering — restart web\\mock_server.ps1 (or .py) and reload.';
@@ -1467,7 +1567,7 @@ function setAcct(t,bad){var m=$('acctMsg');if(!m){return;}m.textContent=t||'';m.
 var cloudPromise=null;
 function loadCloud(){
   if(cloudPromise){return cloudPromise;}
-  cloudPromise=import('./firebase.js?v=4').then(function(mod){
+  cloudPromise=import('./firebase.js?v=5').then(function(mod){
     state.cloud.mod=mod;
     mod.onUser(function(u){onCloudUser(u);});
     return mod;
@@ -1515,10 +1615,6 @@ function updateAccountUI(){
     :'Not signed in — sign in to share readings and settings across your devices.';}
   var am=$('acctManage');
   if(am){am.textContent=u?'Manage account / sign out':'Sign in / Manage account';}
-  var ab=$('acctBtn');
-  if(ab){ab.hidden=!state.prefs.entered;}
-  var ga=$('greetAcct');
-  if(ga){ga.hidden=true;}
   var fn=$('inName');
   if(fn){
     if(u){
@@ -1530,6 +1626,7 @@ function updateAccountUI(){
       fn.disabled=true;fn.value='Guest';
     }
   }
+  updateProfileBlock();
   updateAuthUI();
 }
 function updateCloudFoot(){
@@ -1643,7 +1740,7 @@ function cloudMaybePublish(d){
    browser stay identical. Device-specific choices (data source, ESP32 address,
    publish/follow) are NOT shared — a phone on BLE and a browser on the mock
    server could never agree on those. */
-var CLOUD_PREF_KEYS=['theme','font','mode','pollMs','anim','name','fHead','fBody','colors','layout'];
+var CLOUD_PREF_KEYS=['theme','font','mode','pollMs','anim','name','pfp','fHead','fBody','colors','layout'];
 function cloudReady(){return !!state.cloud.user&&!!state.cloud.mod;}
 function syncedPrefs(){
   var o={},i,k;
@@ -1713,13 +1810,60 @@ function greetWord(){
 }
 function updateGreeting(){
   var g=$('greet');if(!g){return;}
-  var line=$('greetLine'),clock=$('greetClock'),sub=$('greetSub');
-  if(line){line.textContent=greetWord()+', '+greetName();}
+  var w=$('greetWord'),n=$('greetNameEl'),clock=$('greetClock'),sub=$('greetSub'),av=$('greetAv');
+  var name=greetName(),pf=state.prefs.pfp||'';
+  if(w){w.textContent=greetWord()+',';}
+  if(n){n.textContent=name;}
+  if(av){
+    if(pf){if(av.getAttribute('src')!==pf){av.src=pf;}av.hidden=false;}
+    else{if(av.getAttribute('src')){av.removeAttribute('src');}av.hidden=true;}
+  }
   var d=new Date(),p=function(n){return n<10?'0'+n:''+n;};
   if(clock){clock.textContent=p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
   if(sub){sub.textContent=d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})+
-    ' · '+(state.cloud.user?('syncing as '+(state.cloud.user.email||greetName())):'this device only');}
+    ' · '+(state.cloud.user?('syncing as '+(state.cloud.user.email||name)):'this device only');}
   g.hidden=false;
+  updateProfileBlock();
+}
+/* the account block pinned to the bottom of the settings nav (mockup) */
+function updateProfileBlock(){
+  var pf=state.prefs.pfp||'';
+  var a=$('setPfp');
+  if(a){if(pf){if(a.getAttribute('src')!==pf){a.src=pf;}a.hidden=false;}
+    else{if(a.getAttribute('src')){a.removeAttribute('src');}a.hidden=true;}}
+  var b=$('pfpPreview');
+  if(b){if(pf){if(b.getAttribute('src')!==pf){b.src=pf;}b.hidden=false;}
+    else{if(b.getAttribute('src')){b.removeAttribute('src');}b.hidden=true;}}
+  var nm=$('setPName');if(nm){nm.textContent=greetName();}
+  var em=$('setPEmail');if(em){em.textContent=state.cloud.user?(state.cloud.user.email||'Signed in'):'Not signed in';}
+}
+/* downscale a picked image to a small square data URL so prefs stay light and
+   the picture can live in the account document. */
+function downscaleImage(file,cb){
+  try{
+    var reader=new FileReader();
+    reader.onload=function(){
+      var img=new Image();
+      img.onload=function(){
+        var s=128,c=document.createElement('canvas');c.width=s;c.height=s;
+        var x=c.getContext('2d');
+        var r=Math.max(s/img.width,s/img.height),w=img.width*r,h=img.height*r;
+        x.drawImage(img,(s-w)/2,(s-h)/2,w,h);
+        try{cb(c.toDataURL('image/jpeg',0.82));}catch(e){cb(null);}
+      };
+      img.onerror=function(){cb(null);};
+      img.src=reader.result;
+    };
+    reader.onerror=function(){cb(null);};
+    reader.readAsDataURL(file);
+  }catch(e){cb(null);}
+}
+function setPfp(v){
+  state.prefs.pfp=v||'';
+  savePrefs();
+  updateGreeting();updateProfileBlock();pushPrefsNow();
+  var m=$('acctMsg');
+  if(m){m.textContent=v?'Picture updated — shared with your account.':'Picture removed.';m.className='msg';}
 }
 function startClock(){
   updateGreeting();
@@ -1754,7 +1898,6 @@ function hideAuth(){var a=$('auth');if(a){a.hidden=true;}}
 function enterDash(){
   state.prefs.entered=true;savePrefs();
   hideAuth();
-  var ab=$('acctBtn');if(ab){ab.hidden=false;}
 }
 function openAuth(){showAuth();}
 function wireAuth(){
@@ -2064,7 +2207,7 @@ function refreshSettingsHints(){
   }else if(p.source==='esp32'){
     $('srcHint').textContent='ESP32 over Wi‑Fi: readings come from the device at http://'+p.host+':'+p.port+'/data.';
   }else{
-    $('srcHint').textContent='Bluetooth: reads the ESP32 straight over BLE (Nordic UART) — no router or hotspot needed.';
+    $('srcHint').textContent=(p.source==='usb'?'USB cable: the PC talks to the ESP32 over its serial port — no Wi‑Fi and no Bluetooth at all. Start web\\usb_server.ps1 first; it serves this page and forwards /data and /config to the COM port.':'Bluetooth: reads the ESP32 straight over BLE (Nordic UART) — no router or hotspot needed.');
   }
   $('trHint').textContent=(p.transport==='proxy')
     ? 'Requests go through this server (/proxy/data → ESP32). No CORS needed — use this when the page is served by the local server.'
@@ -2078,7 +2221,7 @@ function refreshSettingsHints(){
   if(p.source==='ble'){
     var ok=bleSupported();
     $('bleHint').textContent=ok
-      ? 'Web Bluetooth is available. The ESP32 advertises as “FoodMonitor”. Press “Save & connect” (or “Pair / connect now”) and pick it in the browser dialog.'
+      ? 'Web Bluetooth is available. The ESP32 advertises as “FoodMonitor”. It connects the moment you pick Bluetooth (BLE) — or press “Pair / connect now”.'
       : 'Web Bluetooth needs Chrome or Edge, served from http://localhost (or HTTPS). Open this dashboard from the local server to enable it.';
     $('blePairBtn').disabled=!ok;
     $('bleSetMsg').textContent=state.bleOK
@@ -2111,7 +2254,13 @@ function syncSettingsForm(){
   renderTray();
   refreshSettingsHints();
 }
-function openSettings(){syncSettingsForm();setMsg('');$('scrim').hidden=false;$('setClose').focus();}
+function openSettings(){
+  syncSettingsForm();setMsg('');
+  var sh=document.querySelector('.sheet');if(sh){sh.classList.remove('showmain');}
+  selectPane('appearance');
+  updateProfileBlock();
+  $('scrim').hidden=false;$('setClose').focus();
+}
 function closeSettings(){$('scrim').hidden=true;$('setBtn').focus();}
 
 function testConn(){
@@ -2131,25 +2280,27 @@ function testConn(){
     })
     .catch(function(e){
       var why=(e&&e.message)?e.message:String(e);
-      setMsg('No answer ('+why+'). '+(p.transport==='proxy'
-        ? 'Is the local server running?'
-        : 'Check the IP, that the ESP32 is on this network and the firmware has CORS.'),true);
+      setMsg('No answer ('+why+'). '+(p.source==='usb'
+        ? 'Is web\\usb_server.ps1 still running, with the COM port open?'
+        : (p.transport==='proxy'
+          ? 'Is the local server running?'
+          : 'Check the IP, that the ESP32 is on this network and the firmware has CORS.')),true);
     });
 }
-function saveSettings(){
+/* Every control applies the moment it is chosen — there is no Save button.
+   Kept silent (no banner) so typing an address does not spam the sheet. */
+function applySettingsNow(){
   var p=readSettingsForm();
-  if(p.source==='esp32'&&!p.host){
-    setMsg('Enter the ESP32 host or IP address.',true);return;
-  }
-  if(p.source==='ble'&&!bleSupported()){
-    setMsg('Web Bluetooth is not available here — use Chrome or Edge from http://localhost.',true);return;
-  }
+  if(!p.host){p.host=PREF_DEFAULTS.host;}
   var changed=(p.source!==state.prefs.source);
   state.prefs=p;savePrefs();
   persistServerSettings();
-  applyTheme();applyFont();applyMode();startPolling();syncSettingsForm();
+  applyTheme();applyFont();applyAnim();applyMode();startPolling();
   if(changed){resetStream();}
-  if(p.source==='ble'&&!state.bleOK){bleConnect();}
+  if(p.source==='ble'&&!state.bleOK&&!state.ble){
+    if(bleSupported()){bleConnect();}
+    else{setMsg('Web Bluetooth needs Chrome or Edge, served from http://localhost.',true);}
+  }
   if(p.sync!=='off'){
     loadCloud().catch(function(){
       setAcct('Cloud is unavailable here — check your connection.',true);
@@ -2157,8 +2308,16 @@ function saveSettings(){
   }
   applyCloud();
   pushPrefsNow();
-  setMsg('Saved — '+(p.source==='ble'?'Bluetooth':p.source)+' source'
-    +(p.source==='ble'?'':', polling every '+fmt(p.pollMs)+' ms')+'.',false);
+  refreshSettingsHints();
+  updateProfileBlock();
+}
+/* switch the settings sheet's two-pane nav (desktop) / single pane (mobile) */
+function selectPane(name){
+  var nav=$('setNav'),main=document.querySelector('.setmain');
+  if(nav){Array.prototype.forEach.call(nav.querySelectorAll('.setnavbtn'),function(b){
+    b.setAttribute('aria-selected',String(b.dataset.pane===name));});}
+  if(main){Array.prototype.forEach.call(main.querySelectorAll('.setpane'),function(pn){
+    pn.classList.toggle('on',pn.dataset.pane===name);});}
 }
 /* best-effort: remember the ESP32 address next to the server (settings.json),
    so a fresh browser or cleared localStorage still finds the device. */
@@ -2172,7 +2331,7 @@ function persistServerSettings(){
   $(id).addEventListener('click',function(ev){
     var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
     setSeg(id,b.dataset.v);
-    if(id==='segSource'||id==='segTransport'||id==='segSync'){refreshSettingsHints();}
+    if(id==='segSource'||id==='segTransport'||id==='segSync'||id==='segPoll'){applySettingsNow();}
     if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();pushPrefsNow();}
     if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();pushPrefsNow();}
     if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();pushPrefsNow();}
@@ -2227,14 +2386,40 @@ if($('acctManage')){$('acctManage').addEventListener('click',openAuth);}
 $('setBtn').addEventListener('click',openSettings);
 $('blePairBtn').addEventListener('click',bleConnect);
 $('setClose').addEventListener('click',closeSettings);
-$('setSave').addEventListener('click',saveSettings);
 $('testBtn').addEventListener('click',testConn);
+if($('pfpPick')){$('pfpPick').addEventListener('click',function(){var i=$('pfpInput');if(i){i.click();}});}
+if($('pfpInput')){$('pfpInput').addEventListener('change',function(){
+  var f=this.files&&this.files[0];
+  if(!f){return;}
+  downscaleImage(f,function(url){
+    if(!url){var m=$('acctMsg');if(m){m.textContent='That image could not be read.';m.className='msg bad';}return;}
+    setPfp(url);
+  });
+  this.value='';
+});}
+if($('pfpClear')){$('pfpClear').addEventListener('click',function(){setPfp('');});}
+if($('setNav')){$('setNav').addEventListener('click',function(ev){
+  var b=ev.target.closest('.setnavbtn');if(!b||!this.contains(b)){return;}
+  selectPane(b.dataset.pane);
+  var sh=document.querySelector('.sheet');
+  if(sh&&window.matchMedia&&window.matchMedia('(max-width:640px)').matches){sh.classList.add('showmain');}
+});}
+Array.prototype.forEach.call(document.querySelectorAll('.setback'),function(b){
+  b.addEventListener('click',function(){
+    var sh=document.querySelector('.sheet');if(sh){sh.classList.remove('showmain');}
+  });
+});
 $('scrim').addEventListener('click',function(ev){if(ev.target===$('scrim')){closeSettings();}});
 document.addEventListener('keydown',function(ev){
   if(ev.key==='Escape'&&!$('scrim').hidden){closeSettings();}
 });
+var hostTimer=null;
 ['inHost','inPort'].forEach(function(id){
-  $(id).addEventListener('input',refreshSettingsHints);
+  $(id).addEventListener('input',function(){
+    refreshSettingsHints();
+    if(hostTimer){clearTimeout(hostTimer);}
+    hostTimer=setTimeout(applySettingsNow,700);   /* apply as you type, debounced */
+  });
 });
 if(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').addEventListener){
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',function(){
@@ -2256,6 +2441,7 @@ function initFromServer(){
     if(sv.host){p.host=String(sv.host);p.port=parseInt(sv.port,10)||80;found=true;}
     if(info.esp32Host){p.host=String(info.esp32Host);p.port=parseInt(info.esp32Port,10)||80;found=true;}
     if(info.mode==='esp32'){p.source='esp32';found=true;}
+    if(info.mode==='usb'){p.source='usb';found=true;}   /* served by usb_server.ps1 */
     if(found){savePrefs();syncSettingsForm();resetStream();}
   });
 }

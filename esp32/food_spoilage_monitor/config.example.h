@@ -31,6 +31,13 @@
 #define SAMPLE_INTERVAL_MS   500    // sample the sensor every 0.5 s
 #define REFRESH_MS           2000   // push/refresh cadence (matches UI poll)
 
+/* ---------------------------- 3b. USB / PC ------------------------------- */
+// Stream the same JSON snapshots over the USB cable so the dashboard can run
+// on a PC with NO Wi-Fi and NO Bluetooth (web/usb_server.ps1 bridges the COM
+// port). Set to 0 if you want the Arduino Serial Plotter to see only the
+// plain "raw,avg,status" CSV lines.
+#define ENABLE_SERIAL_JSON   1
+
 /* ---------------------------- 4. Defaults -------------------------------- */
 // Calibrate, then either edit these or change them from the dashboard
 // (Calibration card -> Save). Saved values persist in flash (NVS).

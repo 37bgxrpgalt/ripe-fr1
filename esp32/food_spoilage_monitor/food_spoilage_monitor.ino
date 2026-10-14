@@ -2,7 +2,7 @@
  *  SMART FOOD SPOILAGE MONITOR — ESP32 + MQ-3
  * ---------------------------------------------------------------------------
  *  Reads an MQ-3 gas sensor (alcohol / VOC vapours from spoiling food) and
- *  serves a Material Design 3 dashboard locally, with THREE connectivity
+ *  serves a Material Design 3 dashboard locally, with FOUR connectivity
  *  modes so you are never stuck without a network:
  *
  *    MODE 1 — Wi-Fi (STA)     Joins your router; dashboard at http://<ip>
@@ -12,10 +12,19 @@
  *    MODE 3 — BLE UART        Nordic-UART-style service, always advertised
  *                             when ENABLE_BLE=1, so readings are available
  *                             to any BLE terminal app with zero Wi-Fi.
+ *    MODE 4 — USB (serial)     Plug the ESP32 straight into a PC's USB port
+ *                             and run web/usb_server.ps1, which bridges the
+ *                             COM port to the dashboard — needs NO Wi-Fi and
+ *                             NO Bluetooth at all (see section 8b below).
  *
  *  NO WI-FI AT ALL?  Set ENABLE_WIFI 0 in config.h — the device becomes
  *  BLE-only (fast boot, no router, no hotspot) and the hosted dashboard can
  *  read it over Bluetooth (Settings -> Data source -> Bluetooth in the page).
+ *
+ *  NO WI-FI AND NO BLUETOOTH EITHER?  Use the USB cable. The firmware also
+ *  streams the same JSON over the serial port, and web/usb_server.ps1 (plain
+ *  Windows PowerShell, nothing to install) serves the dashboard and bridges
+ *  /data + /config to the COM port. Pick "USB (PC)" in the page's Settings.
  *
  *  ENDPOINTS
  *    GET  /        -> Material 3 dashboard (embedded HTML, no external assets)
@@ -57,6 +66,13 @@
 #include "web_page.h"                    // generated from web/index.html
 #include "favicon_svg.h"                 // generated from web/favicon.svg
 
+/* Stream JSON snapshots over the USB cable (MODE 4). Declared here, right
+   after config.h, because the build-time sanity check below needs it. Set
+   ENABLE_SERIAL_JSON to 0 in config.h for a CSV-only Arduino Serial Plotter. */
+#ifndef ENABLE_SERIAL_JSON
+  #define ENABLE_SERIAL_JSON 1
+#endif
+
 #if ENABLE_BLE
   #include <BLEDevice.h>
   #include <BLEServer.h>
@@ -66,8 +82,8 @@
   #endif
 #endif
 
-#if !ENABLE_WIFI && !ENABLE_BLE
-  #error "Both ENABLE_WIFI and ENABLE_BLE are 0 - there is no way to read the sensor."
+#if !ENABLE_WIFI && !ENABLE_BLE && !ENABLE_SERIAL_JSON
+  #error "ENABLE_WIFI, ENABLE_BLE and ENABLE_SERIAL_JSON are all 0 - there is no way to read the sensor."
 #endif
 
 /* ===========================================================================
@@ -435,6 +451,85 @@ void serviceBLE() {
 #endif // ENABLE_BLE
 
 /* ===========================================================================
+ *  8b. USB / SERIAL — the same snapshots over the USB cable (MODE 4)
+ * ---------------------------------------------------------------------------
+ *  Lets the dashboard run on a PC with NO Wi-Fi and NO Bluetooth at all: plug
+ *  the ESP32 into the PC with a USB cable and run web/usb_server.ps1, which
+ *  opens the COM port, serves the dashboard, and bridges /data + /config.
+ *
+ *  The line protocol mirrors the BLE UART one:
+ *    device -> PC   one JSON snapshot per REFRESH_MS (same buildJson output)
+ *    PC -> device   "GET" | "PING" | "CFG:w,s,f,c"  (replies on one line)
+ *
+ *  The plain "raw,avg,status" CSV lines are still printed every
+ *  SAMPLE_INTERVAL_MS (Serial Plotter). The bridge understands both, so it
+ *  even works with older firmware that only emits the CSV lines.
+ * =========================================================================== */
+#if ENABLE_SERIAL_JSON
+static String        usbLine;
+static unsigned long lastUsbPush = 0;
+
+static void usbSendLine(const char* s) { Serial.println(s); }
+
+static void usbHandleLine(const String& line) {
+  if (line.length() == 0) return;
+
+  if (line.equalsIgnoreCase("GET")) {
+    char json[384];
+    buildJson(json, sizeof(json));
+    usbSendLine(json);
+    return;
+  }
+  if (line.equalsIgnoreCase("PING")) { usbSendLine("PONG"); return; }
+
+  if (line.startsWith("CFG:")) {              // CFG:warn,spoiled,floor,ceil
+    int v[4]; int n = 0; int idx = 4;
+    while (n < 4) {
+      int comma = line.indexOf(',', idx);
+      String part = (comma < 0) ? line.substring(idx) : line.substring(idx, comma);
+      v[n++] = part.toInt();
+      if (comma < 0) break;
+      idx = comma + 1;
+    }
+    if (n != 4) { usbSendLine("{\"ok\":false,\"error\":\"CFG:w,s,f,c\"}"); return; }
+
+    String err;
+    char ack[96];
+    if (applyCfg(v[0], v[1], v[2], v[3], &err)) {
+      snprintf(ack, sizeof(ack),
+               "{\"ok\":true,\"thr_warn\":%d,\"thr_spoiled\":%d,"
+               "\"cal_floor\":%d,\"cal_ceil\":%d}",
+               cfg.warn, cfg.spoiled, cfg.floor, cfg.ceil);
+      Serial.printf("[USB] cfg saved warn=%d spoiled=%d floor=%d ceil=%d\n",
+                    cfg.warn, cfg.spoiled, cfg.floor, cfg.ceil);
+    } else {
+      snprintf(ack, sizeof(ack), "{\"ok\":false,\"error\":\"%s\"}", err.c_str());
+    }
+    usbSendLine(ack);
+    return;
+  }
+}
+
+static void serviceSerial() {
+  /* inbound command lines */
+  while (Serial.available()) {
+    char c = (char)Serial.read();
+    if (c == '\r') continue;
+    if (c == '\n') { usbHandleLine(usbLine); usbLine = ""; }
+    else if (usbLine.length() < 64) usbLine += c;
+  }
+
+  /* outbound snapshot, on the same cadence as the BLE push */
+  if (millis() - lastUsbPush >= REFRESH_MS) {
+    lastUsbPush = millis();
+    char json[384];
+    buildJson(json, sizeof(json));
+    usbSendLine(json);
+  }
+}
+#endif
+
+/* ===========================================================================
  *  9. SETUP & LOOP
  * =========================================================================== */
 void setup() {
@@ -458,8 +553,12 @@ void setup() {
     if (!connectSTA()) startAP();
     startWeb();
   #else
-    netMode = MODE_BLE;
-    Serial.println("Wi-Fi disabled (ENABLE_WIFI 0) - BLE only.");
+    netMode = MODE_BLE;                        /* not Wi-Fi; label is cosmetic */
+    #if ENABLE_BLE
+      Serial.println("Wi-Fi disabled (ENABLE_WIFI 0) - reading over BLE + USB.");
+    #else
+      Serial.println("Wi-Fi and BLE disabled - reading over USB serial.");
+    #endif
   #endif
 
   #if ENABLE_BLE
@@ -491,5 +590,9 @@ void loop() {
 
   #if ENABLE_BLE
     serviceBLE();
+  #endif
+
+  #if ENABLE_SERIAL_JSON
+    serviceSerial();                            // USB cable (MODE 4)
   #endif
 }

@@ -138,7 +138,7 @@ export function watchPrefs(uid, cb, onErr) {
    actually present are written, so an older client can still seed a doc. */
 export function pushPrefs(uid, p) {
   const out = { updatedAt: serverTimestamp() };
-  const simple = ['theme', 'font', 'mode', 'name', 'anim', 'fHead', 'fBody'];
+  const simple = ['theme', 'font', 'mode', 'name', 'pfp', 'anim', 'fHead', 'fBody'];
   simple.forEach(function (k) { if (p[k] !== undefined) out[k] = String(p[k] || ''); });
   if (p.pollMs !== undefined) out.pollMs = p.pollMs;
   if (p.colors !== undefined) out.colors = p.colors || {};
