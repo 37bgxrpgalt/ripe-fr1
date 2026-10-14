@@ -767,7 +767,9 @@ Run the dashboard on a PC with the ESP32 on a USB cable — no Wi-Fi, no BLE.
 - `android_app/app/build.gradle.kts`: `versionCode 2` / `versionName "1.1.1"`.
 - Packaged as `D:\Ripe_FR-1-v1.1.1.apk` (13.61 MB, debug-signed sideload, same
   as previous assets). `aapt` confirms `versionName='1.1.1'`.
-- GitHub Release upload is still manual (no `gh` CLI on this PC).
+- GitHub Release **v1.1.1 published** (tag `v1.1.1`, asset
+  `Ripe_FR-1-v1.1.1.apk`, body = `RELEASE_NOTES_v1.1.1.md`). The download docs
+  (`README.md` §11, `android_app/README.md`) now point at `v1.1.1`.
 
 ### Verified
 - Web (mock server `:8013`): sheet measures **677×791** for all five options,
