@@ -840,6 +840,14 @@ body,.panel,.readout,.verdict,.chamber,.greet,.authcard,.sheet{
                 <span class="msg" id="bleSetMsg" aria-live="polite"></span>
               </div>
             </div>
+            <div class="grp" id="usbGrp" hidden>
+              <h3>USB cable</h3>
+              <p class="hint" id="usbHint"></p>
+              <div class="actions" style="margin-top:12px">
+                <button class="btn-quiet" id="usbPairBtn" type="button">Connect USB</button>
+                <span class="msg" id="usbSetMsg" aria-live="polite"></span>
+              </div>
+            </div>
             <div class="grp" id="syncGrp">
               <h3>Cloud sync</h3>
               <div class="seg" id="segSync" role="radiogroup" aria-label="Cloud sync">
@@ -983,6 +991,8 @@ var state={
   pending:0, fails:0, demo:false, demoTick:0, last:null,
   calDirty:false, cfgFromDevice:null,
   ble:null, bleCmd:'', bleBuf:'', bleOK:false, bleFail:false, bleHeart:0, bleName:'', bleSeen:0,
+  usbPort:null, usbWriter:null, usbReader:null, usbBuf:'', usbOK:false, usbFail:false,
+  usbSeen:0, usbName:'', usbHeart:0, usbJSON:false, usbGranted:[], usbClosing:false,
   cloud:{mod:null,user:null,unsub:null,unsubPrefs:null,watch:0,lastPub:0,lastStatus:null,lastMs:0}
 };
 
@@ -1161,6 +1171,14 @@ function resetStream(){
       ? ('BLE · '+(state.bleName||'connected')) : 'Bluetooth — not paired';
     return;
   }
+  if(state.prefs.source==='usb'&&serialSupported()){
+    state.usbJSON=false;
+    $('connChip').className='conn '+(state.usbOK?'is-ok':'is-wait');
+    $('connText').textContent=state.usbOK
+      ? ('USB · '+(state.usbName||'serial')) : 'USB — choose a serial port';
+    serialAutoConnect();
+    return;
+  }
   pollHTTP();
 }
 
@@ -1245,6 +1263,7 @@ function pollHTTP(){
     return;
   }
   if(state.prefs.source==='ble'){ return; }   /* pushed by the device, not polled */
+  if(state.prefs.source==='usb'&&serialSupported()){ return; }  /* pushed over the COM port */
   if(state.pending){return;}
   state.pending=1;
   fetch(endpointUrl('data'),{cache:'no-store',signal:AbortSignal.timeout(4500)})
@@ -1409,7 +1428,9 @@ function saveCfg(){
   };
   var fail=function(){calMsg('The '+(state.prefs.source==='mock'?'mock server':'device')+
     ' did not accept the change. Try again.',true);};
-  if(state.ble&&state.bleOK){
+  if(state.prefs.source==='usb'&&state.usbOK&&state.usbWriter){
+    serialWrite('CFG:'+o.warn+','+o.spoiled+','+o.floor+','+o.ceil).then(done).catch(fail);
+  }else if(state.ble&&state.bleOK){
     bleWrite('CFG:'+o.warn+','+o.spoiled+','+o.floor+','+o.ceil).then(done).catch(fail);
   }else{
     fetch(endpointUrl('config'),{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1541,6 +1562,181 @@ function bleConnect(){
       $('btMsg').className='msg bad';
       if($('bleGrp')&&!$('bleGrp').hidden){refreshSettingsHints();}
     });
+}
+
+/* ------------------------------------------------------- USB (Web Serial) --- */
+/* Chromium (Chrome/Edge, desktop) can open the ESP32's COM port straight from the
+   page — no local program, no Wi-Fi, no Bluetooth. This is preferred whenever the
+   browser offers it; web\usb_server.ps1 stays the fallback for every other browser.
+   The firmware needs no change: it already streams the same JSON over Serial at
+   115200 baud and accepts GET / PING / CFG:warn,spoiled,floor,ceil. */
+var SERIAL_BAUD=115200;
+function serialSupported(){return !!(navigator.serial&&window.isSecureContext);}
+function setUsbMsg(t,bad){var el=$('usbSetMsg');if(el){el.textContent=t;el.className='msg'+(bad?' bad':'');}}
+function hex4(n){var s=Number(n).toString(16);while(s.length<4){s='0'+s;}return s;}
+function serialName(port){
+  var info=(port&&port.getInfo)?port.getInfo():{};
+  return (info.usbVendorId!=null)?('serial '+hex4(info.usbVendorId)+':'+hex4(info.usbProductId)):'serial port';
+}
+/* One line of the device's serial output: a JSON snapshot, a command ack, or —
+   on firmware built without ENABLE_SERIAL_JSON — the Plotter CSV. */
+function serialLine(line){
+  line=String(line).replace(/\r$/,'').trim();
+  if(!line){return;}
+  if(line.charAt(0)==='{'){
+    try{
+      var d=JSON.parse(line);
+      if(!d||typeof d.raw!=='number'){return;}
+      d.mode='SERIAL';                       /* the raw JSON says WI-FI / AP / BLE */
+      d.ip='usb://'+(state.usbName||'serial');
+      state.usbSeen=Date.now();state.usbOK=true;state.usbJSON=true;
+      if(state.prefs.source==='usb'){onOnline(d);}
+      applyData(d);
+    }catch(e){}
+    return;
+  }
+  if(line.indexOf('+OK')===0||line==='PONG'){state.usbOK=true;state.usbSeen=Date.now();return;}
+  var m=/^(\d+)\s*,\s*(\d+)\s*,\s*([A-Za-z]+)$/.exec(line);
+  if(m&&!state.usbJSON){
+    var c=state.cfg,raw=parseInt(m[1],10);
+    var dd={value:raw,raw:raw,avg:parseInt(m[2],10),status:String(m[3]).toUpperCase(),
+      thr_warn:c.warn,thr_spoiled:c.spoiled,cal_floor:c.floor,cal_ceil:c.ceil,
+      uptime_s:0,rssi:0,mode:'SERIAL (CSV)',ip:'usb://'+(state.usbName||'serial')};
+    state.usbSeen=Date.now();state.usbOK=true;
+    if(state.prefs.source==='usb'){onOnline(dd);}
+    applyData(dd);
+  }
+}
+function serialWrite(str){
+  if(!state.usbWriter){return Promise.reject('no writer');}
+  try{return state.usbWriter.write(new TextEncoder().encode(str+'\n'));}
+  catch(e){return Promise.reject(e);}
+}
+function serialPump(port){
+  var dec=new TextDecoder();
+  var reader=port.readable.getReader();
+  state.usbReader=reader;
+  function step(){
+    reader.read().then(function(res){
+      if(res.done){throw new Error('closed');}
+      state.usbBuf+=dec.decode(res.value,{stream:true});
+      var i;
+      while((i=state.usbBuf.indexOf('\n'))>=0){
+        serialLine(state.usbBuf.slice(0,i));
+        state.usbBuf=state.usbBuf.slice(i+1);
+      }
+      step();
+    }).catch(function(){serialLost();});
+  }
+  step();
+}
+function serialOpen(port){
+  if(state.usbOK||state.usbPort){return Promise.resolve();}
+  state.usbPort=port;
+  state.usbName=serialName(port);
+  setUsbMsg('Opening '+state.usbName+' at '+SERIAL_BAUD+' baud…',false);
+  return port.open({baudRate:SERIAL_BAUD}).catch(function(err){
+    state.usbPort=null;state.usbWriter=null;
+    throw err;
+  }).then(function(){
+    state.usbBuf='';state.usbJSON=false;state.usbOK=false;
+    try{state.usbWriter=port.writable.getWriter();}catch(e){state.usbWriter=null;}
+    serialPump(port);
+    /* opening asserts DTR/RTS, which resets most ESP32 boards — let it boot */
+    return new Promise(function(res){setTimeout(res,1800);});
+  }).then(function(){
+    return serialWrite('GET');
+  }).then(function(){
+    state.usbOK=true;
+    $('connChip').className='conn is-ok';
+    $('connText').textContent='USB · '+(state.usbName||'serial');
+    if(state.usbHeart){clearInterval(state.usbHeart);}
+    state.usbHeart=setInterval(serialHeartbeat,2000);
+    refreshSettingsHints();
+  });
+}
+function serialClose(){
+  state.usbClosing=true;
+  var p=state.usbPort,rd=state.usbReader,wr=state.usbWriter;
+  state.usbOK=false;state.usbPort=null;state.usbReader=null;state.usbWriter=null;
+  if(state.usbHeart){clearInterval(state.usbHeart);state.usbHeart=0;}
+  try{if(wr){wr.releaseLock();}}catch(e){}
+  try{if(rd){var cr=rd.cancel();if(cr&&cr.catch){cr.catch(function(){});}}}catch(e){}
+  try{if(p){var cp=p.close();if(cp&&cp.catch){cp.catch(function(){});}}}catch(e){}
+  setTimeout(function(){state.usbClosing=false;},400);
+}
+function serialLost(){
+  if(state.usbClosing){state.usbClosing=false;return;}
+  state.usbOK=false;state.usbPort=null;state.usbWriter=null;state.usbReader=null;
+  if(state.usbHeart){clearInterval(state.usbHeart);state.usbHeart=0;}
+  if(state.prefs.source==='usb'){
+    $('connChip').className='conn is-wait';
+    $('connText').textContent='USB — not connected';
+    var b=$('banner');b.hidden=false;b.className='banner is-off';
+    $('bannerTitle').textContent='Disconnected.';
+    $('bannerMsg').textContent='USB has gone quiet — plug the ESP32 back in, then press “Connect USB”.';
+  }
+  refreshSettingsHints();
+  setUsbMsg('USB disconnected — plug the board back in, then press “Connect USB”.',true);
+}
+function serialHeartbeat(){
+  if(state.prefs.source!=='usb'||!state.usbOK){return;}
+  if(state.usbWriter){serialWrite('PING').catch(function(){});}
+  if(state.usbSeen&&Date.now()-state.usbSeen>6000){
+    var b=$('banner');b.hidden=false;b.className='banner is-off';
+    $('bannerTitle').textContent='Disconnected.';
+    $('bannerMsg').textContent='USB has gone quiet — is the ESP32 still on the cable?';
+    $('connChip').className='conn is-wait';
+    $('connText').textContent='USB — no data';
+  }
+}
+function serialPickFail(err){
+  var name=err&&err.name;
+  if(name==='NotFoundError'){setUsbMsg('No port selected — press “Connect USB” and choose the ESP32.',false);}
+  else if(name==='SecurityError'){setUsbMsg('Web Serial needs a click on a secure page (https or localhost).',true);}
+  else{setUsbMsg('USB: '+((err&&err.message)?err.message:err),true);}
+}
+function serialPick(){
+  if(!serialSupported()){return Promise.reject(new Error('no Web Serial'));}
+  return navigator.serial.requestPort().then(function(port){
+    state.usbGranted=[port].concat((state.usbGranted||[]).filter(function(p){return p!==port;}));
+    return serialOpen(port);
+  });
+}
+function serialConnect(){
+  if(!serialSupported()){
+    setUsbMsg('This browser has no Web Serial. Use Chrome or Edge on this PC — or run web\\usb_server.ps1 as the bridge.',true);
+    return;
+  }
+  if(state.usbOK){setUsbMsg('USB is already connected — readings are live.',false);return;}
+  var granted=state.usbGranted||[];
+  if(!state.usbPort&&granted.length){serialOpen(granted[0]).catch(function(){serialPick().catch(serialPickFail);});return;}
+  serialPick().catch(serialPickFail);
+}
+/* the button always re-chooses, so a wrong/stale port can be replaced */
+function usbPairClick(){
+  serialClose();
+  setUsbMsg('Choose the ESP32’s serial port…',false);
+  serialPick().catch(serialPickFail);
+}
+/* silent reconnect from a previously-granted port — no dialog, no gesture */
+function serialAutoConnect(){
+  if(!serialSupported()||state.usbOK||state.usbPort){return false;}
+  var g=state.usbGranted||[];
+  if(g.length){serialOpen(g[0]).catch(function(){});return true;}
+  return false;
+}
+function serialInit(){
+  if(!serialSupported()){return;}
+  navigator.serial.getPorts().then(function(ports){
+    state.usbGranted=ports||[];
+    if(state.prefs.source==='usb'){serialAutoConnect();}
+  }).catch(function(){});
+  try{
+    navigator.serial.addEventListener('disconnect',function(ev){
+      if(state.usbPort&&ev.target===state.usbPort){serialLost();}
+    });
+  }catch(e){}
 }
 
 /* ----------------------------------------------------------------- cloud --- */
@@ -2191,6 +2387,7 @@ function refreshSettingsHints(){
   var p=readSettingsForm();
   $('espGrp').hidden=(p.source!=='esp32');
   $('bleGrp').hidden=(p.source!=='ble');
+  $('usbGrp').hidden=(p.source!=='usb');
   $('fontHint').textContent=(p.font==='editorial')
     ? 'Editorial: Merriweather for headings and figures, PT Sans for body text.'
     : (p.font==='custom'
@@ -2207,7 +2404,7 @@ function refreshSettingsHints(){
   }else if(p.source==='esp32'){
     $('srcHint').textContent='ESP32 over Wi‑Fi: readings come from the device at http://'+p.host+':'+p.port+'/data.';
   }else{
-    $('srcHint').textContent=(p.source==='usb'?'USB cable: the PC talks to the ESP32 over its serial port — no Wi‑Fi and no Bluetooth at all. Start web\\usb_server.ps1 first; it serves this page and forwards /data and /config to the COM port.':'Bluetooth: reads the ESP32 straight over BLE (Nordic UART) — no router or hotspot needed.');
+    $('srcHint').textContent=(p.source==='usb'?'USB cable: the PC reads the ESP32 over its serial port — no Wi‑Fi and no Bluetooth. Chrome/Edge opens it straight from the page; other browsers run web\\usb_server.ps1.':'Bluetooth: reads the ESP32 straight over BLE (Nordic UART) — no router or hotspot needed.');
   }
   $('trHint').textContent=(p.transport==='proxy')
     ? 'Requests go through this server (/proxy/data → ESP32). No CORS needed — use this when the page is served by the local server.'
@@ -2227,6 +2424,16 @@ function refreshSettingsHints(){
     $('bleSetMsg').textContent=state.bleOK
       ? ('Connected'+(state.bleName?' to '+state.bleName:'')+'.')
       : (state.ble?'Connecting…':'Not connected.');
+  }
+  if(p.source==='usb'){
+    var sok=serialSupported();
+    $('usbHint').textContent=sok
+      ? 'Web Serial: Chrome or Edge opens the ESP32’s COM port straight from this page — press “Connect USB” and choose the port. No local program, no Wi‑Fi, no Bluetooth.'
+      : 'Direct USB needs Chrome or Edge on a desktop. In any other browser, run web\\usb_server.ps1 on the PC with the cable and open the localhost address it prints.';
+    $('usbPairBtn').disabled=!sok;
+    $('usbPairBtn').textContent=state.usbOK?'Reconnect USB':'Connect USB';
+    setUsbMsg(state.usbOK?('Connected'+(state.usbName?' to '+state.usbName:'')+'.')
+      :(state.usbPort?'Opening…':'Not connected.'),false);
   }
 }
 function setMsg(t,bad){
@@ -2270,6 +2477,11 @@ function testConn(){
     else{setMsg('Opening Bluetooth pairing…',false);bleConnect();}
     return;
   }
+  if(p.source==='usb'&&serialSupported()){
+    if(state.usbOK){setMsg('USB serial connected'+(state.usbName?' to '+state.usbName:'')+' — readings are live.',false);}
+    else{setMsg('Choose the ESP32’s serial port…',false);serialConnect();}
+    return;
+  }
   var url=endpointUrl('data',p);
   setMsg('Testing '+url+' …',false);
   fetch(url,{cache:'no-store',signal:AbortSignal.timeout(4000)})
@@ -2305,6 +2517,7 @@ function applySettingsNow(){
     if(bleSupported()){bleConnect();}
     else{setMsg('Web Bluetooth needs Chrome or Edge, served from http://localhost.',true);}
   }
+  if(p.source==='usb'&&serialSupported()){serialAutoConnect();}
   if(p.sync!=='off'){
     loadCloud().catch(function(){
       setAcct('Cloud is unavailable here — check your connection.',true);
@@ -2336,6 +2549,8 @@ function persistServerSettings(){
     var b=ev.target.closest('button');if(!b||!this.contains(b)){return;}
     setSeg(id,b.dataset.v);
     if(id==='segSource'||id==='segTransport'||id==='segSync'||id==='segPoll'){applySettingsNow();}
+    /* picking USB pops the browser's serial-port chooser, exactly like BLE */
+    if(id==='segSource'&&b.dataset.v==='usb'&&serialSupported()&&!state.usbOK&&!state.usbPort){serialConnect();}
     if(id==='segTheme'){state.prefs.theme=b.dataset.v;savePrefs();applyTheme();pushPrefsNow();}
     if(id==='segFont'){state.prefs.font=b.dataset.v;savePrefs();applyFont();refreshSettingsHints();pushPrefsNow();}
     if(id==='segMode'){state.prefs.mode=b.dataset.v;savePrefs();applyMode();refreshSettingsHints();pushPrefsNow();}
@@ -2458,6 +2673,8 @@ if(navigator.bluetooth){
     : 'Bluetooth: Web Bluetooth needs a secure page — open the dashboard from http://localhost.';
   $('btBtn').addEventListener('click',bleConnect);
 }
+if($('usbPairBtn')){$('usbPairBtn').addEventListener('click',usbPairClick);}
+serialInit();
 
 window.addEventListener('resize',function(){drawSpark();});
 applyTheme();
